@@ -1,0 +1,117 @@
+{
+    "version": 1.0,
+    "case":
+    {
+        "mesh_file": "box.nmsh",
+        "output_at_end": true,
+        "output_boundary": true,
+        "output_checkpoints": true,
+        "checkpoint_control": "simulationtime",
+        "checkpoint_value": 500,
+        "end_time": 1500,
+        "variable_timestep": true,
+        "target_cfl": 0.5,
+        "max_timestep": 1e-1,
+        // "restart_file": "les00001.chkp",
+        "timestep": 1e-2,
+        "numerics":
+        {
+            "time_order": 3,
+            "polynomial_order": 7,
+            "dealias": true
+        },
+        "fluid":
+        {
+            "nut_field": "nut",
+            "scheme": "pnpn",
+            "mu": 8e-6,
+            "rho": 1,
+            "initial_condition":
+            {
+                "type": "user"
+            },
+            "velocity_solver":
+            {
+                "type": "coupledcg",
+                "preconditioner": "jacobi",
+                "projection_space_size": 0,
+                "absolute_tolerance": 1e-4,
+                "max_iterations": 800
+            },
+            "pressure_solver":
+            {
+                "type": "gmres",
+                "preconditioner": "hsmg",
+                "projection_space_size": 5,
+                "absolute_tolerance": 1e-3,
+                "max_iterations": 800
+            },
+            "flow_rate_force":
+            {
+                "direction": 1,
+                "value": 1.0,
+                "use_averaged_flow": true
+            },
+            "boundary_conditions":
+            [
+                {
+                    "type": "wall_model",
+                    "model": "spalding",
+                    "kappa": 0.384,
+                    "B": 4.2,
+                    "z0": 0.01,
+                    "zone_indices": [3,4],
+                    "h_index": 1
+                }
+            ],
+            "output_control": "simulationtime",
+            "output_value": 50
+        },
+        "simulation_components":
+        [
+            {
+                "type": "field_writer",
+                "fields": ["tau"],
+                "compute_control": "tsteps",
+                "compute_value": 1,
+                "output_control" : "global"
+            },
+            {
+                "type": "les_model",
+                "model": "vreman",
+                "compute_control": "tsteps",
+                "compute_value": 1,
+                "output_control" : "global",
+                "output_filename" : "les"
+            },
+            {
+                "type": "force_torque",
+                "compute_control": "tsteps",
+                "compute_value": 10,
+                "zone_id": 3,
+                "zone_name": "Bottom wall",
+                "center": [0,0,0],
+                "scale": 0.08261701266432
+            },
+            {
+                "type": "force_torque",
+                "compute_control": "tsteps",
+                "compute_value": 10,
+                "zone_id": 4,
+                "zone_name": "Top wall",
+                "center": [0,0,0],
+                "scale": 0.08261701266432
+            },
+            {
+                "type": "fluid_stats",
+                "output_control": "simulationtime",
+                "output_value": 50,
+                "start_time": 1000,
+                "compute_control": "tsteps",
+                "compute_value": 5,
+                "avg_direction": "xz",
+                "set_of_stats": "basic"
+            }
+        ]
+    }
+}
