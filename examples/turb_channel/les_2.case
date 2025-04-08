@@ -8,7 +8,7 @@
         "output_checkpoints": true,
         "checkpoint_control": "simulationtime",
         "checkpoint_value": 500,
-        "end_time": 1,
+        "end_time": 0.1,
         "variable_timestep": true,
         "target_cfl": 0.5,
         "max_timestep": 1e-1,
@@ -17,7 +17,7 @@
         "numerics":
         {
             "time_order": 3,
-            "polynomial_order": 3,
+            "polynomial_order": 2,
             "dealias": true
         },
         "fluid":
@@ -56,12 +56,21 @@
             [
                 {
                     "type": "wall_model",
-                    "model": "rough_log_law",
+                    "model": "spalding",
                     "kappa": 0.384,
                     "B": 4.2,
                     "z0": 0.01,
                     "h_index": 1,
-                    "zone_indices": [3,4]
+                    "zone_indices": [3]
+                },
+                {
+                    "type": "wall_model",
+                    "model": "spalding",
+                    "kappa": 0.384,
+                    "B": 4.2,
+                    "z0": 0.01,
+                    "h_index": 1,
+                    "zone_indices": [4]
                 }
             ],
             "output_control": "tsteps",
@@ -79,6 +88,7 @@
             {
                 "type": "les_model",
                 "model": "vreman",
+                "nut_field": "nut",
                 "compute_control": "tsteps",
                 "compute_value": 1,
                 "output_control" : "global",
