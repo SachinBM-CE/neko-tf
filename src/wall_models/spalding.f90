@@ -48,6 +48,7 @@ module spalding
   use torchfort
   use operators, only:grad
   use comm, only : pe_rank, pe_size
+  use utils, only : linear_index
 
   implicit none
   private
@@ -153,12 +154,13 @@ contains
     real(kind=rp), dimension(:,:), allocatable :: dvs_dx, dvs_dy, dvs_dz
     real(kind=rp), dimension(:,:), allocatable :: dws_dx, dws_dy, dws_dz
     real(kind=rp), dimension(:), allocatable :: dus_dn, dvs_dn, dws_dn
-    integer :: ir, is, it, ie, lid, lx, ly, lxyz, nelv
+    integer :: ir, is, it, ie, lid, lx, ly, lz, lxyz, nelv
     lx = this%coef%Xh%lx
     ly = this%coef%Xh%ly
+    lz = this%coef%Xh%lz
     lxyz = this%coef%Xh%lxyz
     nelv = this%coef%msh%nelv
-    print *, "lx = ", lx, "ly = ", ly, "lxyz = ", lxyz, "nelv = ", nelv
+    print *, "lx = ", lx, "ly = ", ly, "lxyz = ", lxyz, "nelv = ", nelv, "this%n_nodes", this%n_nodes
 
     ! Allocate arrays for gradient components (sbm)
     allocate(dus_dx(lxyz, nelv), dus_dy(lxyz, nelv), dus_dz(lxyz, nelv))
@@ -182,7 +184,8 @@ contains
       is = this%ind_s(i)
       it = this%ind_t(i)
       ie = this%ind_e(i)
-      lid = ir + lx * (is - 1 + ly * (it - 1))
+!       lid = ir + lx * (is - 1 + ly * (it - 1))
+      lid = linear_index(ir, is, it, ie, lx, ly, lz) - lx*ly*lz*(ie-1)
       print *, "ir = ", ir, "is = ", is, "it = ", it, "ie = ", ie, "lid = ", lid
 
       ! Sample the velocity
@@ -197,9 +200,9 @@ contains
       vi = vi - normu * this%n_y%x(i)
       wi = wi - normu * this%n_z%x(i)
 
-      dus_dn(i) = dus_dx(lid, ie)*this%n_x%x(i) + dus_dy(lid, ie)*this%n_y%x(i) + dus_dz(lid, ie)*this%n_z%x(i)
-      dvs_dn(i) = dvs_dx(lid, ie)*this%n_x%x(i) + dvs_dy(lid, ie)*this%n_y%x(i) + dvs_dz(lid, ie)*this%n_z%x(i)
-      dws_dn(i) = dws_dx(lid, ie)*this%n_x%x(i) + dws_dy(lid, ie)*this%n_y%x(i) + dws_dz(lid, ie)*this%n_z%x(i)
+!       dus_dn(i) = dus_dx(lid, ie)*this%n_x%x(i) + dus_dy(lid, ie)*this%n_y%x(i) + dus_dz(lid, ie)*this%n_z%x(i)
+!       dvs_dn(i) = dvs_dx(lid, ie)*this%n_x%x(i) + dvs_dy(lid, ie)*this%n_y%x(i) + dvs_dz(lid, ie)*this%n_z%x(i)
+!       dws_dn(i) = dws_dx(lid, ie)*this%n_x%x(i) + dws_dy(lid, ie)*this%n_y%x(i) + dws_dz(lid, ie)*this%n_z%x(i)
 
 !       print *, i, dus_dn(i), dvs_dn(i), dws_dn(i)
 !       write(*, '(A,I4,A,3(ES13.5))') 'Wall-normal grads at node ', i, ': ', dus_dn(i), dvs_dn(i), dws_dn(i)
@@ -282,3 +285,205 @@ contains
 
 
 end module spalding
+
+! !> Implements `spalding_t`.
+! module spalding
+!   use field, only: field_t
+!   use num_types, only : rp
+!   use json_module, only : json_file
+!   use dofmap, only : dofmap_t
+!   use coefs, only : coef_t
+!   use neko_config, only : NEKO_BCKND_DEVICE
+!   use wall_model, only : wall_model_t
+!   use field_registry, only : neko_field_registry
+!   use json_utils, only : json_get_or_default
+!   use logger, only : neko_log, NEKO_LOG_DEBUG
+!   use utils, only : neko_error
+!
+!   implicit none
+!   private
+!
+!   !> Wall model based on Spalding's law of the wall.
+!   !! Reference: http://dx.doi.org/10.1115/1.3641728
+!   type, public, extends(wall_model_t) :: spalding_t
+!      !> The von Karman coefficient.
+!      real(kind=rp) :: kappa = 0.41_rp
+!      !> The log-law intercept.
+!      real(kind=rp) :: B = 5.2_rp
+!    contains
+!      !> Constructor from JSON.
+!      procedure, pass(this) :: init => spalding_init
+!      !> Constructor from components.
+!      procedure, pass(this) :: init_from_components => &
+!        spalding_init_from_components
+!      !> Destructor.
+!      procedure, pass(this) :: free => spalding_free
+!      !> Compute the wall shear stress.
+!      procedure, pass(this) :: compute => spalding_compute
+!      !> Solve for the friction velocity
+!      procedure, private, pass(this) :: solve
+!   end type spalding_t
+!
+! contains
+!   !> Constructor from JSON.
+!   !! @param coef SEM coefficients.
+!   !! @param msk The boundary mask.
+!   !! @param facet The boundary facets.
+!   !! @param nu The molecular kinematic viscosity.
+!   !! @param h_index The off-wall index of the sampling cell.
+!   !! @param json A dictionary with parameters.
+!   subroutine spalding_init(this, coef, msk, facet, nu, h_index, json)
+!     class(spalding_t), intent(inout) :: this
+!     type(coef_t), intent(in) :: coef
+!     integer, intent(in) :: msk(:)
+!     integer, intent(in) :: facet(:)
+!     real(kind=rp), intent(in) :: nu
+!     integer, intent(in) :: h_index
+!     type(json_file), intent(inout) :: json
+!     real(kind=rp) :: kappa, B
+!
+!     call json_get_or_default(json, "kappa", kappa, 0.41_rp)
+!     call json_get_or_default(json, "B", B, 5.2_rp)
+!
+!     call this%init_from_components(coef, msk, facet, nu, h_index, kappa, B)
+!   end subroutine spalding_init
+!
+!   !> Constructor from components.
+!   !! @param coef SEM coefficients.
+!   !! @param msk The boundary mask.
+!   !! @param facet The boundary facets.
+!   !! @param nu The molecular kinematic viscosity.
+!   !! @param h_index The off-wall index of the sampling cell.
+!   !! @param kappa The von Karman coefficient.
+!   !! @param B The log-law intercept.
+!   subroutine spalding_init_from_components(this, coef, msk, facet, nu, h_index,&
+!                                            kappa, B)
+!     class(spalding_t), intent(inout) :: this
+!     type(coef_t), intent(in) :: coef
+!     integer, intent(in) :: msk(:)
+!     integer, intent(in) :: facet(:)
+!     integer, intent(in) :: h_index
+!     real(kind=rp), intent(in) :: nu
+!     real(kind=rp), intent(in) :: kappa
+!     real(kind=rp), intent(in) :: B
+!
+!     if (NEKO_BCKND_DEVICE .eq. 1) then
+!        call neko_error("Spalding's law is only available on the CPU backend.")
+!     end if
+!
+!     call this%init_base(coef, msk, facet, nu, h_index)
+!
+!     this%kappa = kappa
+!     this%B = B
+!   end subroutine spalding_init_from_components
+!
+!
+!   !> Destructor for the spalding_t (base) class.
+!   subroutine spalding_free(this)
+!     class(spalding_t), intent(inout) :: this
+!
+!     call this%free_base()
+!
+!   end subroutine spalding_free
+!
+!   !> Compute the wall shear stress.
+!   !! @param t The time value.
+!   !! @param tstep The current time-step.
+!   subroutine spalding_compute(this, t, tstep)
+!     class(spalding_t), intent(inout) :: this
+!     real(kind=rp), intent(in) :: t
+!     integer, intent(in) :: tstep
+!     type(field_t), pointer :: u
+!     type(field_t), pointer :: v
+!     type(field_t), pointer :: w
+!     integer :: i
+!     real(kind=rp) :: ui, vi, wi, magu, utau, normu, guess
+!
+!     u => neko_field_registry%get_field("u")
+!     v => neko_field_registry%get_field("v")
+!     w => neko_field_registry%get_field("w")
+!
+!     do i=1, this%n_nodes
+!       ! Sample the velocity
+!       ui = u%x(this%ind_r(i), this%ind_s(i), this%ind_t(i), this%ind_e(i))
+!       vi = v%x(this%ind_r(i), this%ind_s(i), this%ind_t(i), this%ind_e(i))
+!       wi = w%x(this%ind_r(i), this%ind_s(i), this%ind_t(i), this%ind_e(i))
+!
+!       ! Project on tangential direction
+!       normu = ui * this%n_x%x(i) + vi * this%n_y%x(i) + wi * this%n_z%x(i)
+!
+!       ui = ui - normu * this%n_x%x(i)
+!       vi = vi - normu * this%n_y%x(i)
+!       wi = wi - normu * this%n_z%x(i)
+!
+!       magu = sqrt(ui**2 + vi**2 + wi**2)
+!
+!       ! Get initial guess for Newton solver
+!       if (tstep .eq. 1) then
+!          guess = sqrt(magu * this%nu / this%h%x(i))
+!       else
+!          guess = this%tau_x(i)**2 + this%tau_y(i)**2 + this%tau_z(i)**2
+!          guess = sqrt(sqrt(guess))
+!       end if
+!
+!       utau =  this%solve(magu, this%h%x(i), guess)
+!
+!       ! Distribute according to the velocity vector
+!       this%tau_x(i) = -utau**2 * ui / magu
+!       this%tau_y(i) = -utau**2 * vi / magu
+!       this%tau_z(i) = -utau**2 * wi / magu
+!     end do
+!
+!   end subroutine spalding_compute
+!
+!   !> Newton solver for the algebraic equation defined by the law.
+!   !! @param u The velocity value.
+!   !! @param y The wall-normal distance.
+!   !! @param guess Initial guess.
+!   function solve(this, u,  y, guess) result(utau)
+!     class(spalding_t), intent(inout) :: this
+!     real(kind=rp), intent(in) :: u
+!     real(kind=rp), intent(in) :: y
+!     real(kind=rp), intent(in) :: guess
+!     real(kind=rp) :: yp, up, kappa, B, utau
+!     real(kind=rp) :: error, f, df, old
+!     integer :: niter, k, maxiter
+!
+!     utau = guess
+!     kappa = this%kappa
+!     B = this%B
+!
+!     maxiter = 100
+!
+!     do k=1, maxiter
+!       up = u / utau
+!       yp = y * utau / this%nu
+!       niter = k
+!       old = utau
+!
+!       ! Evaluate function and its derivative
+!       f = (up + exp(-kappa*B)* &
+!           (exp(kappa*up) - 1.0_rp - kappa*up - 0.5_rp*(kappa*up)**2 - &
+!            1.0_rp/6*(kappa*up)**3) - yp)
+!
+!       df = (-y / this%nu - u/utau**2 - kappa*up/utau*exp(-kappa*B) * &
+!            (exp(kappa*up) - 1 - kappa*up - 0.5*(kappa*up)**2))
+!
+!       ! Update solution
+!       utau = utau - f / df
+!
+!       error = abs((old - utau)/old)
+!
+!       if (error < 1e-3) then
+!         exit
+!       endif
+!
+!     enddo
+!
+!     if ((niter .eq. maxiter) .and. (neko_log%level_ .eq. NEKO_LOG_DEBUG)) then
+!        write(*,*) "Newton not converged", error, f, utau, old, guess
+!     end if
+! end function solve
+!
+!
+! end module spalding

@@ -7,7 +7,7 @@
         "output_boundary": true,
         "output_checkpoints": true,
         "checkpoint_control": "simulationtime",
-        "checkpoint_value": 500,
+        "checkpoint_value": 50,
         "end_time": 0.1,
         "variable_timestep": true,
         "target_cfl": 0.5,
@@ -24,8 +24,11 @@
         {
             "nut_field": "nut",
             "scheme": "pnpn",
-            "mu": 8e-6,
-            "rho": 1,
+            "output_control": "tsteps",
+            "output_value": 100,
+            // "mu": 8e-6,
+            // "rho": 1,
+            "Re": 2800,
             "initial_condition":
             {
                 "type": "user"
@@ -72,17 +75,13 @@
                     "h_index": 1,
                     "zone_indices": [4]
                 }
-            ],
-            "output_control": "tsteps",
-            "output_value": 1
+            ]
         },
         "simulation_components":
         [
             {
                 "type": "field_writer",
                 "fields": ["tau"],
-                "compute_control": "tsteps",
-                "compute_value": 1,
                 "output_control" : "global",
             },
             {
@@ -90,14 +89,14 @@
                 "model": "vreman",
                 "nut_field": "nut",
                 "compute_control": "tsteps",
-                "compute_value": 1,
-                "output_control" : "global",
+                "compute_value": 10,
+                "output_control" : "global", // global syncs the output_ parameter to that of the fluid
                 "output_filename" : "les"
             },
             {
                 "type": "force_torque",
                 "compute_control": "tsteps",
-                "compute_value": 1,
+                "compute_value": 10,
                 "zone_id": 3,
                 "zone_name": "Bottom wall",
                 "center": [0,0,0],
@@ -106,7 +105,7 @@
             {
                 "type": "force_torque",
                 "compute_control": "tsteps",
-                "compute_value": 1,
+                "compute_value": 10,
                 "zone_id": 4,
                 "zone_name": "Top wall",
                 "center": [0,0,0],
@@ -116,7 +115,7 @@
                 "type": "fluid_stats",
                 "output_control": "simulationtime",
                 "output_value": 50,
-                "start_time": 1000,
+                "start_time": 50,
                 "compute_control": "tsteps",
                 "compute_value": 5,
                 "avg_direction": "xz",
