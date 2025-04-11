@@ -184,7 +184,7 @@
 
     ------------Fluid-------------
  lx =            3 ly =            3 lxyz =           27 nelv =         5832 this%n_nodes        2916
- ir =            1 is =            2 it =            1 ie =            1 lid =            4
+ ir =            1 is =            2 it =            1  =            1 lid =            4
  ir =            2 is =            2 it =            1 ie =            1 lid =            5
  ir =            3 is =            2 it =            1 ie =            1 lid =            6
  ir =            1 is =            2 it =            2 ie =            1 lid =           13

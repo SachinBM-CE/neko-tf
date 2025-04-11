@@ -150,9 +150,9 @@ contains
     real(kind=rp) :: ui, vi, wi, magu, utau, normu, guess
 
     ! TorchFort
-    real(kind=rp), dimension(:,:), allocatable :: dus_dx, dus_dy, dus_dz
-    real(kind=rp), dimension(:,:), allocatable :: dvs_dx, dvs_dy, dvs_dz
-    real(kind=rp), dimension(:,:), allocatable :: dws_dx, dws_dy, dws_dz
+    real(kind=rp), dimension(:,:,:,:), allocatable :: dus_dx, dus_dy, dus_dz
+    real(kind=rp), dimension(:,:,:,:), allocatable :: dvs_dx, dvs_dy, dvs_dz
+    real(kind=rp), dimension(:,:,:,:), allocatable :: dws_dx, dws_dy, dws_dz
     real(kind=rp), dimension(:), allocatable :: dus_dn, dvs_dn, dws_dn
     integer :: ir, is, it, ie, lid, lx, ly, lz, lxyz, nelv
     lx = this%coef%Xh%lx
@@ -163,9 +163,9 @@ contains
     print *, "lx = ", lx, "ly = ", ly, "lxyz = ", lxyz, "nelv = ", nelv, "this%n_nodes", this%n_nodes
 
     ! Allocate arrays for gradient components (sbm)
-    allocate(dus_dx(lxyz, nelv), dus_dy(lxyz, nelv), dus_dz(lxyz, nelv))
-    allocate(dvs_dx(lxyz, nelv), dvs_dy(lxyz, nelv), dvs_dz(lxyz, nelv))
-    allocate(dws_dx(lxyz, nelv), dws_dy(lxyz, nelv), dws_dz(lxyz, nelv))
+    allocate(dus_dx(lx,ly,lz,nelv), dus_dy(lx,ly,lz,nelv), dus_dz(lx,ly,lz,nelv))
+    allocate(dvs_dx(lx,ly,lz,nelv), dvs_dy(lx,ly,lz,nelv), dvs_dz(lx,ly,lz,nelv))
+    allocate(dws_dx(lx,ly,lz,nelv), dws_dy(lx,ly,lz,nelv), dws_dz(lx,ly,lz,nelv))
     allocate(dus_dn(this%n_nodes), dvs_dn(this%n_nodes), dws_dn(this%n_nodes))
 
     u => neko_field_registry%get_field("u")
@@ -185,8 +185,8 @@ contains
       it = this%ind_t(i)
       ie = this%ind_e(i)
 !       lid = ir + lx * (is - 1 + ly * (it - 1))
-      lid = linear_index(ir, is, it, ie, lx, ly, lz) - lx*ly*lz*(ie-1)
-      print *, "ir = ", ir, "is = ", is, "it = ", it, "ie = ", ie, "lid = ", lid
+!       lid = linear_index(ir, is, it, ie, lx, ly, lz) - lx*ly*lz*(ie-1)
+!       print *, "ir = ", ir, "is = ", is, "it = ", it, "ie = ", ie, "lid = ", lid
 
       ! Sample the velocity
       ui = u%x(ir, is, it, ie)
@@ -200,9 +200,11 @@ contains
       vi = vi - normu * this%n_y%x(i)
       wi = wi - normu * this%n_z%x(i)
 
-!       dus_dn(i) = dus_dx(lid, ie)*this%n_x%x(i) + dus_dy(lid, ie)*this%n_y%x(i) + dus_dz(lid, ie)*this%n_z%x(i)
-!       dvs_dn(i) = dvs_dx(lid, ie)*this%n_x%x(i) + dvs_dy(lid, ie)*this%n_y%x(i) + dvs_dz(lid, ie)*this%n_z%x(i)
-!       dws_dn(i) = dws_dx(lid, ie)*this%n_x%x(i) + dws_dy(lid, ie)*this%n_y%x(i) + dws_dz(lid, ie)*this%n_z%x(i)
+      dus_dn(i) = dus_dx(ir,is,it,ie)*this%n_x%x(i) + dus_dy(ir,is,it,ie)*this%n_y%x(i) + dus_dz(ir,is,it,ie)*this%n_z%x(i)
+      dvs_dn(i) = dvs_dx(ir,is,it,ie)*this%n_x%x(i) + dvs_dy(ir,is,it,ie)*this%n_y%x(i) + dvs_dz(ir,is,it,ie)*this%n_z%x(i)
+      dws_dn(i) = dws_dx(ir,is,it,ie)*this%n_x%x(i) + dws_dy(ir,is,it,ie)*this%n_y%x(i) + dws_dz(ir,is,it,ie)*this%n_z%x(i)
+
+
 
 !       print *, i, dus_dn(i), dvs_dn(i), dws_dn(i)
 !       write(*, '(A,I4,A,3(ES13.5))') 'Wall-normal grads at node ', i, ': ', dus_dn(i), dvs_dn(i), dws_dn(i)
@@ -286,7 +288,7 @@ contains
 
 end module spalding
 
-! !> Implements `spalding_t`.
+!> Implements `spalding_t`.
 ! module spalding
 !   use field, only: field_t
 !   use num_types, only : rp
@@ -299,6 +301,11 @@ end module spalding
 !   use json_utils, only : json_get_or_default
 !   use logger, only : neko_log, NEKO_LOG_DEBUG
 !   use utils, only : neko_error
+!   ! TorchFort
+!   use torchfort
+!   use operators, only:opgrad
+!   use comm, only : pe_rank, pe_size
+!   use utils, only : linear_index
 !
 !   implicit none
 !   private
@@ -310,6 +317,9 @@ end module spalding
 !      real(kind=rp) :: kappa = 0.41_rp
 !      !> The log-law intercept.
 !      real(kind=rp) :: B = 5.2_rp
+!      ! TorchFort
+!      type(field_t) :: dudx, dudy, dudz, dvdx, dvdy, dvdz, dwdx, dwdy, dwdz
+!      type(field_t), pointer :: u, v, w
 !    contains
 !      !> Constructor from JSON.
 !      procedure, pass(this) :: init => spalding_init
@@ -399,15 +409,47 @@ end module spalding
 !     integer :: i
 !     real(kind=rp) :: ui, vi, wi, magu, utau, normu, guess
 !
+!     ! TorchFort
+!     real(kind=rp), dimension(:), allocatable :: dus_dn, dvs_dn, dws_dn
+!     integer :: ir, is, it, ie, lid, lx, ly, lz, lxyz, nelv
+!     lx = this%coef%Xh%lx
+!     ly = this%coef%Xh%ly
+!     lz = this%coef%Xh%lz
+!     lxyz = this%coef%Xh%lxyz
+!     nelv = this%coef%msh%nelv
+!     print *, "lx = ", lx, "ly = ", ly, "lxyz = ", lxyz, "nelv = ", nelv, "this%n_nodes", this%n_nodes
+!
+!     ! Allocate arrays for gradient components (sbm)
+!     allocate(dus_dn(this%n_nodes), dvs_dn(this%n_nodes), dws_dn(this%n_nodes))
+!
 !     u => neko_field_registry%get_field("u")
 !     v => neko_field_registry%get_field("v")
 !     w => neko_field_registry%get_field("w")
 !
+!     ! Gradient Tensor
+!     call opgrad(this%dudx%x, this%dudy%x, this%dudz%x, this%u%x, this%coef)
+!     call opgrad(this%dvdx%x, this%dvdy%x, this%dvdz%x, this%v%x, this%coef)
+!     call opgrad(this%dwdx%x, this%dwdy%x, this%dwdz%x, this%w%x, this%coef)
+!
+!     print *, "size(this%dudy%x) = ", size(this%dudy%x)
+!     print *, "size(this%u%x) =", size(this%u%x)
+! !     print *, "size(this%coef) =", size(this%coef)
+!
 !     do i=1, this%n_nodes
+!
+!       ! indices
+!       ir = this%ind_r(i)
+!       is = this%ind_s(i)
+!       it = this%ind_t(i)
+!       ie = this%ind_e(i)
+! !       lid = ir + lx * (is - 1 + ly * (it - 1))
+!       lid = linear_index(ir, is, it, ie, lx, ly, lz) - lx*ly*lz*(ie-1)
+! !       print *, "ir = ", ir, "is = ", is, "it = ", it, "ie = ", ie, "lid = ", lid
+!
 !       ! Sample the velocity
-!       ui = u%x(this%ind_r(i), this%ind_s(i), this%ind_t(i), this%ind_e(i))
-!       vi = v%x(this%ind_r(i), this%ind_s(i), this%ind_t(i), this%ind_e(i))
-!       wi = w%x(this%ind_r(i), this%ind_s(i), this%ind_t(i), this%ind_e(i))
+!       ui = u%x(ir, is, it, ie)
+!       vi = v%x(ir, is, it, ie)
+!       wi = w%x(ir, is, it, ie)
 !
 !       ! Project on tangential direction
 !       normu = ui * this%n_x%x(i) + vi * this%n_y%x(i) + wi * this%n_z%x(i)
@@ -415,6 +457,13 @@ end module spalding
 !       ui = ui - normu * this%n_x%x(i)
 !       vi = vi - normu * this%n_y%x(i)
 !       wi = wi - normu * this%n_z%x(i)
+!
+! !       dus_dn(i) = dus_dx(lid, ie)*this%n_x%x(i) + dus_dy(lid, ie)*this%n_y%x(i) + dus_dz(lid, ie)*this%n_z%x(i)
+! !       dvs_dn(i) = dvs_dx(lid, ie)*this%n_x%x(i) + dvs_dy(lid, ie)*this%n_y%x(i) + dvs_dz(lid, ie)*this%n_z%x(i)
+! !       dws_dn(i) = dws_dx(lid, ie)*this%n_x%x(i) + dws_dy(lid, ie)*this%n_y%x(i) + dws_dz(lid, ie)*this%n_z%x(i)
+!
+! !       print *, i, dus_dn(i), dvs_dn(i), dws_dn(i)
+! !       write(*, '(A,I4,A,3(ES13.5))') 'Wall-normal grads at node ', i, ': ', dus_dn(i), dvs_dn(i), dws_dn(i)
 !
 !       magu = sqrt(ui**2 + vi**2 + wi**2)
 !
@@ -433,6 +482,10 @@ end module spalding
 !       this%tau_y(i) = -utau**2 * vi / magu
 !       this%tau_z(i) = -utau**2 * wi / magu
 !     end do
+!
+!     print *, "Rank ", pe_rank, this%n_nodes, size(dus_dn), size(dvs_dn), size(dws_dn)
+!
+!     deallocate(dus_dn, dvs_dn, dws_dn)
 !
 !   end subroutine spalding_compute
 !
@@ -483,7 +536,7 @@ end module spalding
 !     if ((niter .eq. maxiter) .and. (neko_log%level_ .eq. NEKO_LOG_DEBUG)) then
 !        write(*,*) "Newton not converged", error, f, utau, old, guess
 !     end if
-! end function solve
+!   end function solve
 !
 !
 ! end module spalding

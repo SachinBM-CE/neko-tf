@@ -149,7 +149,7 @@ module fluid_stats
      procedure, pass(this) :: reset => fluid_stats_reset
      ! Convert computed weak gradients to strong.
      procedure, pass(this) :: make_strong_grad => fluid_stats_make_strong_grad
-     !> Compute certain physical statistical quantities based on existing mean 
+     !> Compute certain physical statistical quantities based on existing mean
      !! fields.
      procedure, pass(this) :: post_process => fluid_stats_post_process
   end type fluid_stats_t
