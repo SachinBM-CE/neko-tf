@@ -154,7 +154,12 @@ contains
     real(kind=rp), dimension(:,:,:,:), allocatable :: dvs_dx, dvs_dy, dvs_dz
     real(kind=rp), dimension(:,:,:,:), allocatable :: dws_dx, dws_dy, dws_dz
     real(kind=rp), dimension(:), allocatable :: dus_dn, dvs_dn, dws_dn
-    integer :: ir, is, it, ie, lid, lx, ly, lz, lxyz, nelv
+    integer :: ir, is, it, ie, lid, lx, ly, lz, lxyz, nelv, res
+    real(kind=rp) :: normux, normuy, normuz, normvx, normvy, normvz, normwx, normwy, normwz
+!     character(len=256) :: tf_key = "RLWM"
+!     character(len=256) :: yaml_path = "/tmp/sachinbm/neko-tf/neko/examples/turb_channel/config_les.yaml"
+!     integer :: model_device = -1, rb_device = -1
+
     lx = this%coef%Xh%lx
     ly = this%coef%Xh%ly
     lz = this%coef%Xh%lz
@@ -176,6 +181,8 @@ contains
     call grad(dus_dx, dus_dy, dus_dz, u%x, this%coef)
     call grad(dvs_dx, dvs_dy, dvs_dz, v%x, this%coef)
     call grad(dws_dx, dws_dy, dws_dz, w%x, this%coef)
+
+    print *, "size(dus_dx) = ", size(dus_dx)
 
     do i=1, this%n_nodes
 
@@ -200,11 +207,25 @@ contains
       vi = vi - normu * this%n_y%x(i)
       wi = wi - normu * this%n_z%x(i)
 
-      dus_dn(i) = dus_dx(ir,is,it,ie)*this%n_x%x(i) + dus_dy(ir,is,it,ie)*this%n_y%x(i) + dus_dz(ir,is,it,ie)*this%n_z%x(i)
-      dvs_dn(i) = dvs_dx(ir,is,it,ie)*this%n_x%x(i) + dvs_dy(ir,is,it,ie)*this%n_y%x(i) + dvs_dz(ir,is,it,ie)*this%n_z%x(i)
-      dws_dn(i) = dws_dx(ir,is,it,ie)*this%n_x%x(i) + dws_dy(ir,is,it,ie)*this%n_y%x(i) + dws_dz(ir,is,it,ie)*this%n_z%x(i)
+      normux = dus_dx(ir,is,it,ie)*this%n_x%x(i)
+      normuy = dus_dy(ir,is,it,ie)*this%n_y%x(i)
+      normuz = dus_dz(ir,is,it,ie)*this%n_z%x(i)
+      normvx = dvs_dx(ir,is,it,ie)*this%n_x%x(i)
+      normvy = dvs_dy(ir,is,it,ie)*this%n_y%x(i)
+      normvz = dvs_dz(ir,is,it,ie)*this%n_z%x(i)
+      normwx = dws_dx(ir,is,it,ie)*this%n_x%x(i)
+      normwy = dws_dy(ir,is,it,ie)*this%n_y%x(i)
+      normwz = dws_dz(ir,is,it,ie)*this%n_z%x(i)
 
+      dus_dn(i) = normux-this%n_x%x(i)*this%n_x%x(i)*normux-this%n_x%x(i)*this%n_y%x(i)*normuy-this%n_x%x(i)*this%n_z%x(i)*normuz
 
+      if (i>=100 .and. i<=105) then
+        print *, dus_dn(i)
+      end if
+
+!       dus_dn(i) = dus_dx(ir,is,it,ie)*this%n_x%x(i) + dus_dy(ir,is,it,ie)*this%n_y%x(i) + dus_dz(ir,is,it,ie)*this%n_z%x(i)
+!       dvs_dn(i) = dvs_dx(ir,is,it,ie)*this%n_x%x(i) + dvs_dy(ir,is,it,ie)*this%n_y%x(i) + dvs_dz(ir,is,it,ie)*this%n_z%x(i)
+!       dws_dn(i) = dws_dx(ir,is,it,ie)*this%n_x%x(i) + dws_dy(ir,is,it,ie)*this%n_y%x(i) + dws_dz(ir,is,it,ie)*this%n_z%x(i)
 
 !       print *, i, dus_dn(i), dvs_dn(i), dws_dn(i)
 !       write(*, '(A,I4,A,3(ES13.5))') 'Wall-normal grads at node ', i, ': ', dus_dn(i), dvs_dn(i), dws_dn(i)
@@ -225,9 +246,11 @@ contains
       this%tau_x(i) = -utau**2 * ui / magu
       this%tau_y(i) = -utau**2 * vi / magu
       this%tau_z(i) = -utau**2 * wi / magu
+
     end do
 
     print *, "Rank ", pe_rank, this%n_nodes, size(dus_dn), size(dvs_dn), size(dws_dn)
+!     print *, "dus_dn = ", dus_dn
 
     deallocate(dus_dx, dus_dy, dus_dz)
     deallocate(dvs_dx, dvs_dy, dvs_dz)

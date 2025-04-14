@@ -13,11 +13,11 @@
         "target_cfl": 0.5,
         "max_timestep": 1e-1,
         // "restart_file": "les00001.chkp",
-        "timestep": 1e-1,
+        "timestep": 1e-2,
         "numerics":
         {
             "time_order": 3,
-            "polynomial_order": 2,
+            "polynomial_order": 7,
             "dealias": true
         },
         "fluid":

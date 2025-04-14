@@ -2,6 +2,7 @@
 lib_LTLIBRARIES = libneko.la
 libneko_la_LDFLAGS = -release ${PACKAGE_VERSION}
 neko_fortran_SOURCES = \
+	common/tf_module.f90 \
 	config/num_types.f90\
 	common/structs.f90\
 	io/format/nmsh.f90\

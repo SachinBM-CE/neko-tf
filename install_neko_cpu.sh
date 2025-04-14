@@ -22,5 +22,7 @@ env FCFLAGS="-I${TORCHFORT_INSTALL}/include" \
     MPIFC=${MPIFORT} MPICC=${MPICC} \
     --prefix=${NEKO_PREFIX}
 
+env FCFLAGS="-I/tmp/sachinbm/TorchFort/build/install/include" LDFLAGS="-L/tmp/sachinbm/TorchFort/build/install/lib64" LIBS="-ltorchfort" ./configure FC="/usr/bin/gfortran-13" CC="/usr/bin/gcc-13" MPIFC="/tmp/sachinbm/openmpi-5.0.5/build/install/bin/mpifort" MPICC="/tmp/sachinbm/openmpi-5.0.5/build/install/bin/mpicc" --prefix="/tmp/sachinbm/neko-tf/neko/install"
+
 # Build and install
 make install

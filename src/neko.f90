@@ -126,6 +126,10 @@ module neko
   use json_utils, only : json_get, json_get_or_default, json_extract_item
   use bc_list, only : bc_list_t
   use, intrinsic :: iso_fortran_env
+
+  use torchfort
+  use tf_module
+
   !$ use omp_lib
   implicit none
 
@@ -139,7 +143,7 @@ contains
     character(len=10) :: suffix
     character(10) :: time
     character(8) :: date
-    integer :: argc, i
+    integer :: argc, i, tf_sys_status
 
     call date_and_time(time = time, date = date)
 
@@ -150,6 +154,10 @@ contains
 
     call neko_log%init()
     call neko_field_registry%init()
+
+    tf_sys_status = torchfort_rl_off_policy_create_system(tf_key, yaml_path, model_device, rb_device)
+    if (tf_sys_status /= TORCHFORT_RESULT_SUCCESS) stop
+    print *, "result of torchfort_rl_off_policy_create_system: ", tf_sys_status
 
     call neko_log%header(NEKO_VERSION, NEKO_BUILD_INFO)
 
