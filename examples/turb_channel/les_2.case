@@ -8,7 +8,7 @@
         "output_checkpoints": true,
         "checkpoint_control": "simulationtime",
         "checkpoint_value": 50,
-        "end_time": 0.1,
+        "end_time": 0.2,
         "variable_timestep": true,
         "target_cfl": 0.5,
         "max_timestep": 1e-1,
@@ -17,7 +17,7 @@
         "numerics":
         {
             "time_order": 3,
-            "polynomial_order": 7,
+            "polynomial_order": 5,
             "dealias": true
         },
         "fluid":
@@ -63,7 +63,7 @@
                     "kappa": 0.384,
                     "B": 4.2,
                     "z0": 0.01,
-                    "h_index": 1,
+                    "h_index": 2,
                     "zone_indices": [3]
                 },
                 {
@@ -72,7 +72,7 @@
                     "kappa": 0.384,
                     "B": 4.2,
                     "z0": 0.01,
-                    "h_index": 1,
+                    "h_index": 2,
                     "zone_indices": [4]
                 }
             ]
