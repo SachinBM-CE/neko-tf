@@ -46,9 +46,10 @@ module spalding
   use utils, only : neko_error
   ! TorchFort
   use torchfort
-  use operators, only:grad
+  use operators, only : grad, dudxyz
   use comm, only : pe_rank, pe_size
   use utils, only : linear_index
+  use tf_module
 
   implicit none
   private
@@ -150,34 +151,41 @@ contains
     real(kind=rp) :: ui, vi, wi, magu, utau, normu, guess
 
     ! TorchFort
-    real(kind=rp), dimension(:,:,:,:), allocatable :: usx, usy, usz, vsx, vsy, vsz, wsx, wsy, wsz
-    real(kind=rp), dimension(:), allocatable :: usn, vsn, wsn
+    real(kind=rp), dimension(:,:,:,:), allocatable :: dudy
+    real(kind=rp), dimension(:), allocatable :: usy, action
     integer :: ir, is, it, ie, lid, lx, ly, lz, lxyz, nelv, res
-    real(kind=rp) :: unx, uny, unz, vnx, vny, vnz, wnx, wny, wnz
+    real(kind=rp), dimension(:,:), allocatable :: state
+!     real(kind=rp), dimension(:,:,:,:), allocatable :: usx, usy, usz, vsx, vsy, vsz, wsx, wsy, wsz
+!     real(kind=rp), dimension(:), allocatable :: usn, vsn, wsn
+!     real(kind=rp) :: unx, uny, unz, vnx, vny, vnz, wnx, wny, wnz
 
     lx = this%coef%Xh%lx
     ly = this%coef%Xh%ly
     lz = this%coef%Xh%lz
     lxyz = this%coef%Xh%lxyz
     nelv = this%coef%msh%nelv
-    print *, "lx = ", lx, "ly = ", ly, "lxyz = ", lxyz, "nelv = ", nelv, "this%n_nodes", this%n_nodes
+    print *, "lx = ", lx, "ly = ", ly, "lz = ", lz, "lxyz = ", lxyz
+    print *, "nelv = ", nelv, "this%n_nodes", this%n_nodes
 
-    ! Allocate arrays for gradient components (sbm)
-    allocate(usx(lx,ly,lz,nelv), usy(lx,ly,lz,nelv), usz(lx,ly,lz,nelv))
-    allocate(vsx(lx,ly,lz,nelv), vsy(lx,ly,lz,nelv), vsz(lx,ly,lz,nelv))
-    allocate(wsx(lx,ly,lz,nelv), wsy(lx,ly,lz,nelv), wsz(lx,ly,lz,nelv))
-    allocate(usn(this%n_nodes), vsn(this%n_nodes), wsn(this%n_nodes))
+    ! Allocation of arrays
+    allocate(dudy(lx,ly,lz,nelv), usy(this%n_nodes), state(3, this%n_nodes), action(this%n_nodes))
+!     allocate(usx(lx,ly,lz,nelv), usy(lx,ly,lz,nelv), usz(lx,ly,lz,nelv))
+!     allocate(vsx(lx,ly,lz,nelv), vsy(lx,ly,lz,nelv), vsz(lx,ly,lz,nelv))
+!     allocate(wsx(lx,ly,lz,nelv), wsy(lx,ly,lz,nelv), wsz(lx,ly,lz,nelv))
+!     allocate(usn(this%n_nodes), vsn(this%n_nodes), wsn(this%n_nodes))
 
     u => neko_field_registry%get_field("u")
     v => neko_field_registry%get_field("v")
     w => neko_field_registry%get_field("w")
+    print *, "size(u%x) = ", size(u%x)
+    print *, "size(this%nx%x) = ", size(this%n_x%x)
 
     ! Gradient Tensor
-    call grad(usx, usy, usz, u%x, this%coef)
-    call grad(vsx, vsy, vsz, v%x, this%coef)
-    call grad(wsx, wsy, wsz, w%x, this%coef)
-
-    print *, "size(usx) = ", size(usx)
+    call dudxyz(dudy, u%x, this%coef%drdy, this%coef%dsdy, this%coef%dtdy, this%coef)
+    print *, "size(dudy) = ", size(dudy)
+!     call grad(usx, usy, usz, u%x, this%coef)
+!     call grad(vsx, vsy, vsz, v%x, this%coef)
+!     call grad(wsx, wsy, wsz, w%x, this%coef)
 
     do i=1, this%n_nodes
 
@@ -194,28 +202,38 @@ contains
 
       ! Project on tangential direction
       normu = ui * this%n_x%x(i) + vi * this%n_y%x(i) + wi * this%n_z%x(i)
-
       ui = ui - normu * this%n_x%x(i)
       vi = vi - normu * this%n_y%x(i)
       wi = wi - normu * this%n_z%x(i)
 
       ! Project gradients on wall-normal direction
-      unx = usx(ir,is,it,ie) * this%n_x%x(i)
-      uny = usy(ir,is,it,ie) * this%n_y%x(i)
-      unz = usz(ir,is,it,ie) * this%n_z%x(i)
-      vnx = vsx(ir,is,it,ie) * this%n_x%x(i)
-      vny = vsy(ir,is,it,ie) * this%n_y%x(i)
-      vnz = vsz(ir,is,it,ie) * this%n_z%x(i)
-      wnx = wsx(ir,is,it,ie) * this%n_x%x(i)
-      wny = wsy(ir,is,it,ie) * this%n_y%x(i)
-      wnz = wsz(ir,is,it,ie) * this%n_z%x(i)
+      usy(i) = dudy(ir,is,it,ie)
+!       unx = usx(ir,is,it,ie) * this%n_x%x(i)
+!       uny = usy(ir,is,it,ie) * this%n_y%x(i)
+!       unz = usz(ir,is,it,ie) * this%n_z%x(i)
+!       vnx = vsx(ir,is,it,ie) * this%n_x%x(i)
+!       vny = vsy(ir,is,it,ie) * this%n_y%x(i)
+!       vnz = vsz(ir,is,it,ie) * this%n_z%x(i)
+!       wnx = wsx(ir,is,it,ie) * this%n_x%x(i)
+!       wny = wsy(ir,is,it,ie) * this%n_y%x(i)
+!       wnz = wsz(ir,is,it,ie) * this%n_z%x(i)
 
-      usn(i) = - this%n_x%x(i)*this%n_x%x(i)*unx + unx - this%n_x%x(i)*this%n_y%x(i)*uny - this%n_x%x(i)*this%n_z%x(i)*unz
-      vsn(i) = - this%n_y%x(i)*this%n_y%x(i)*vny + vny - this%n_y%x(i)*this%n_x%x(i)*vnx - this%n_y%x(i)*this%n_z%x(i)*vnz
-      wsn(i) = - this%n_z%x(i)*this%n_z%x(i)*wnz + wnz - this%n_z%x(i)*this%n_x%x(i)*wnx - this%n_z%x(i)*this%n_y%x(i)*wny
+      ! Wall normal gradient of wall tangential velocity
+!       usn(i) = - this%n_x%x(i)*this%n_x%x(i)*unx + unx - this%n_x%x(i)*this%n_y%x(i)*uny - this%n_x%x(i)*this%n_z%x(i)*unz
+!       vsn(i) = - this%n_y%x(i)*this%n_y%x(i)*vny + vny - this%n_y%x(i)*this%n_x%x(i)*vnx - this%n_y%x(i)*this%n_z%x(i)*vnz
+!       wsn(i) = - this%n_z%x(i)*this%n_z%x(i)*wnz + wnz - this%n_z%x(i)*this%n_x%x(i)*wnx - this%n_z%x(i)*this%n_y%x(i)*wny
+
+      ! Construct the state vector
+      state(1, i) = ui                 ! Instantaneous velocity
+      state(2, i) = dudy(ir,is,it,ie)  ! Wall-normal gradient
+      state(3, i) = this%h%x(i)        ! Distance from wall
+
+      res = torchfort_rl_off_policy_predict("RLWM", state, action)
+      if (res /= TORCHFORT_RESULT_SUCCESS) stop
+      print *, "result of torchfort_rl_off_policy_predict_explore: ", res
 
       if (i>=100 .and. i<=105) then
-        print *, usn(i)
+        print *, usy(i)
       end if
 
 !       print *, i, usn(i), vsn(i), wsn(i)
@@ -240,13 +258,12 @@ contains
 
     end do
 
-    print *, "Rank ", pe_rank, this%n_nodes, size(usn), size(vsn), size(wsn)
-!     print *, "usn = ", usn
+    print *, "Rank ", pe_rank, this%n_nodes ! , size(usn), size(vsn), size(wsn)
+    print *, "size(usy) = ", size(usy), "size(state) = ", size(state)
 
-    deallocate(usx, usy, usz)
-    deallocate(vsx, vsy, vsz)
-    deallocate(wsx, wsy, wsz)
-    deallocate(usn, vsn, wsn)
+    ! Deallocation of arrays
+    deallocate(dudy, usy, state, action)
+!     deallocate(usx, usy, usz, vsx, vsy, vsz, wsx, wsy, wsz, usn, vsn, wsn)
 
   end subroutine spalding_compute
 
