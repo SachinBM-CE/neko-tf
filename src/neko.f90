@@ -155,9 +155,9 @@ contains
     call neko_log%init()
     call neko_field_registry%init()
 
-    tf_sys_status = torchfort_rl_off_policy_create_system(tf_key, yaml_path, model_device, rb_device)
-    if (tf_sys_status /= TORCHFORT_RESULT_SUCCESS) stop
-    print *, "result of torchfort_rl_off_policy_create_system: ", tf_sys_status
+!     tf_sys_status = torchfort_rl_off_policy_create_system(tf_key, yaml_path, model_device, rb_device)
+!     if (tf_sys_status /= TORCHFORT_RESULT_SUCCESS) stop
+!     print *, "result of torchfort_rl_off_policy_create_system: ", tf_sys_status
 
     call neko_log%header(NEKO_VERSION, NEKO_BUILD_INFO)
 
