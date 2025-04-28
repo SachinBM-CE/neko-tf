@@ -47,7 +47,7 @@ module spalding
   ! TorchFort
   use torchfort
   use operators, only : grad, dudxyz
-  use comm, only : pe_rank, pe_size
+  use comm, only : pe_rank, pe_size, NEKO_COMM
   use utils, only : linear_index
   use tf_module
   use iso_c_binding
@@ -155,12 +155,13 @@ contains
     real(kind=rp), dimension(:,:,:,:), allocatable :: dudy
     real(kind=rp), dimension(:), allocatable :: usy
     integer :: ir, is, it, ie, lid, lx, ly, lz, lxyz, nelv, res
-    real(c_float), dimension(:,:), allocatable :: state
-    real(c_float), dimension(:), allocatable :: action
+    real(kind=sp), dimension(:,:), allocatable :: state, action ! real(c_float)
+    logical :: is_ready = .false.
+    real(kind=sp) :: p_loss_val, q_loss_val
 !     real(kind=rp), dimension(:,:,:,:), allocatable :: usx, usy, usz, vsx, vsy, vsz, wsx, wsy, wsz
 !     real(kind=rp), dimension(:), allocatable :: usn, vsn, wsn
 !     real(kind=rp) :: unx, uny, unz, vnx, vny, vnz, wnx, wny, wnz
-    character(len=256) :: tf_key = "ML_model"
+    character(len=256) :: tf_key = "rlwm"
     character(len=256) :: yaml_path = "/tmp/sachinbm/neko-tf/neko/examples/turb_channel/config_les.yaml"
     integer :: model_device = -1, rb_device = -1
 
@@ -173,7 +174,7 @@ contains
     print *, "nelv = ", nelv, "this%n_nodes", this%n_nodes
 
     ! Allocation of arrays
-    allocate(dudy(lx,ly,lz,nelv), usy(this%n_nodes), state(this%n_nodes,3), action(this%n_nodes))
+    allocate(dudy(lx,ly,lz,nelv), usy(this%n_nodes), state(3,this%n_nodes), action(1,this%n_nodes))
 !     allocate(usx(lx,ly,lz,nelv), usy(lx,ly,lz,nelv), usz(lx,ly,lz,nelv))
 !     allocate(vsx(lx,ly,lz,nelv), vsy(lx,ly,lz,nelv), vsz(lx,ly,lz,nelv))
 !     allocate(wsx(lx,ly,lz,nelv), wsy(lx,ly,lz,nelv), wsz(lx,ly,lz,nelv))
@@ -192,9 +193,9 @@ contains
 !     call grad(vsx, vsy, vsz, v%x, this%coef)
 !     call grad(wsx, wsy, wsz, w%x, this%coef)
 
-    res = torchfort_rl_off_policy_create_system(tf_key, yaml_path, model_device, rb_device)
+    res = torchfort_rl_off_policy_create_distributed_system(tf_key, yaml_path, NEKO_COMM, model_device, rb_device)
     if (res /= TORCHFORT_RESULT_SUCCESS) stop
-    print *, "result of torchfort_rl_off_policy_create_system: ", res
+    print *, "result of create_distributed_system: ", res
 
     do i=1, this%n_nodes
 
@@ -233,12 +234,15 @@ contains
 !       wsn(i) = - this%n_z%x(i)*this%n_z%x(i)*wnz + wnz - this%n_z%x(i)*this%n_x%x(i)*wnx - this%n_z%x(i)*this%n_y%x(i)*wny
 
       ! Construct the state vector
-      state(i,1) = ui                 ! Instantaneous velocity
-      state(i,2) = dudy(ir,is,it,ie)  ! Wall-normal gradient
-      state(i,3) = this%h%x(i)        ! Distance from wall
+      state(1,i) = ui                 ! Instantaneous velocity
+      state(2,i) = dudy(ir,is,it,ie)  ! Wall-normal gradient
+      state(3,i) = this%h%x(i)        ! Distance from wall
 
       if (i>=100 .and. i<=105) then
-        print *, usy(i)
+        print *, "usy = ", usy(i)
+        print *, "state(1,i) = ", state(1,i)
+        print *, "state(2,i) = ", state(2,i)
+        print *, "state(3,i) = ", state(3,i)
       end if
 
 !       print *, i, usn(i), vsn(i), wsn(i)
@@ -263,9 +267,26 @@ contains
 
     end do
 
-    res = torchfort_rl_off_policy_predict_float_2d_1d(tf_key, state, action)
+    print *, "shape(state) = ", shape(state)
+    print *, "shape(state) = ", shape(action)
+
+    res = torchfort_rl_off_policy_predict_float_2d_2d(tf_key, state, action)
     if (res /= TORCHFORT_RESULT_SUCCESS) stop
-    print *, "result of torchfort_rl_off_policy_predict_explore: ", res
+    print *, "result of predict_float_2d_2d: ", res
+
+    res = torchfort_rl_off_policy_is_ready(tf_key, is_ready)
+    if (res /= TORCHFORT_RESULT_SUCCESS) stop
+    print *, "result of policy_is_ready: ", res
+
+    res = torchfort_rl_off_policy_train_step_float(tf_key, p_loss_val, q_loss_val)
+    if (res /= TORCHFORT_RESULT_SUCCESS) stop
+    print *, "result of train_step_float: ", res
+
+    do i = 1, this%n_nodes
+        if (i>=100 .and. i<=105) then
+            print *, "action(1,i) = ", action(1,i)
+        end if
+    end do
 
     print *, "Rank ", pe_rank, this%n_nodes ! , size(usn), size(vsn), size(wsn)
     print *, "size(usy) = ", size(usy), "size(state) = ", size(state)
