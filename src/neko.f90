@@ -127,6 +127,7 @@ module neko
   use bc_list, only : bc_list_t
   use, intrinsic :: iso_fortran_env
 
+  ! TorchFort
   use torchfort
   use tf_module
 
@@ -143,7 +144,7 @@ contains
     character(len=10) :: suffix
     character(10) :: time
     character(8) :: date
-    integer :: argc, i, tf_sys_status
+    integer :: argc, i, tf_sys_status, res
 
     call date_and_time(time = time, date = date)
 
@@ -158,6 +159,9 @@ contains
 !     tf_sys_status = torchfort_rl_off_policy_create_system(tf_key, yaml_path, model_device, rb_device)
 !     if (tf_sys_status /= TORCHFORT_RESULT_SUCCESS) stop
 !     print *, "result of torchfort_rl_off_policy_create_system: ", tf_sys_status
+    res = torchfort_rl_off_policy_create_distributed_system(tf_key, yaml_path, NEKO_COMM, model_device, rb_device)
+    if (res /= TORCHFORT_RESULT_SUCCESS) stop
+    print *, "result of create_distributed_system: ", res
 
     call neko_log%header(NEKO_VERSION, NEKO_BUILD_INFO)
 

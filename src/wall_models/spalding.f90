@@ -44,10 +44,11 @@ module spalding
   use json_utils, only : json_get_or_default
   use logger, only : neko_log, NEKO_LOG_DEBUG
   use utils, only : neko_error
+
   ! TorchFort
   use torchfort
   use operators, only : grad, dudxyz
-  use comm, only : pe_rank, pe_size, NEKO_COMM
+!   use comm, only : pe_rank, pe_size, NEKO_COMM
   use utils, only : linear_index
   use tf_module
   use iso_c_binding
@@ -62,6 +63,8 @@ module spalding
      real(kind=rp) :: kappa = 0.41_rp
      !> The log-law intercept.
      real(kind=rp) :: B = 5.2_rp
+     real(kind=rp), dimension(:,:,:,:), allocatable :: dudy
+     real(kind=sp), dimension(:,:), allocatable :: state, action, reward ! real(c_float)
    contains
      !> Constructor from JSON.
      procedure, pass(this) :: init => spalding_init
@@ -93,11 +96,27 @@ contains
     integer, intent(in) :: h_index
     type(json_file), intent(inout) :: json
     real(kind=rp) :: kappa, B
+    integer :: lx, ly, lz, lxyz, nelv
 
     call json_get_or_default(json, "kappa", kappa, 0.41_rp)
     call json_get_or_default(json, "B", B, 5.2_rp)
 
     call this%init_from_components(coef, msk, facet, nu, h_index, kappa, B)
+
+    lx = this%coef%Xh%lx
+    ly = this%coef%Xh%ly
+    lz = this%coef%Xh%lz
+    lxyz = this%coef%Xh%lxyz
+    nelv = this%coef%msh%nelv
+    print *, "lx = ", lx, "ly = ", ly, "lz = ", lz, "lxyz = ", lxyz
+    print *, "nelv = ", nelv, "this%n_nodes", this%n_nodes
+
+    ! Allocation of arrays
+    allocate(this%dudy(lx,ly,lz,nelv))
+    allocate(this%state(3,this%n_nodes), this%action(1,this%n_nodes), this%reward(1,this%n_nodes))
+
+    print *, "spalding_init called!"
+
   end subroutine spalding_init
 
   !> Constructor from components.
@@ -136,6 +155,13 @@ contains
 
     call this%free_base()
 
+    if (allocated(this%dudy)) deallocate(this%dudy)
+    if (allocated(this%state)) deallocate(this%state)
+    if (allocated(this%action)) deallocate(this%action)
+    if (allocated(this%reward)) deallocate(this%reward)
+
+    print *, "spalding_free called!"
+
   end subroutine spalding_free
 
   !> Compute the wall shear stress.
@@ -149,36 +175,12 @@ contains
     type(field_t), pointer :: v
     type(field_t), pointer :: w
     integer :: i
-    real(kind=rp) :: ui, vi, wi, magu, utau, normu, guess
+    real(kind=rp) :: ui, vi, wi, magu, utau, normu, guess, tau_old, tau_new
 
     ! TorchFort
-    real(kind=rp), dimension(:,:,:,:), allocatable :: dudy
-    real(kind=rp), dimension(:), allocatable :: usy
-    integer :: ir, is, it, ie, lid, lx, ly, lz, lxyz, nelv, res
-    real(kind=sp), dimension(:,:), allocatable :: state, action ! real(c_float)
+    integer :: res
     logical :: is_ready = .false.
     real(kind=sp) :: p_loss_val, q_loss_val
-!     real(kind=rp), dimension(:,:,:,:), allocatable :: usx, usy, usz, vsx, vsy, vsz, wsx, wsy, wsz
-!     real(kind=rp), dimension(:), allocatable :: usn, vsn, wsn
-!     real(kind=rp) :: unx, uny, unz, vnx, vny, vnz, wnx, wny, wnz
-    character(len=256) :: tf_key = "rlwm"
-    character(len=256) :: yaml_path = "/tmp/sachinbm/neko-tf/neko/examples/turb_channel/config_les.yaml"
-    integer :: model_device = -1, rb_device = -1
-
-    lx = this%coef%Xh%lx
-    ly = this%coef%Xh%ly
-    lz = this%coef%Xh%lz
-    lxyz = this%coef%Xh%lxyz
-    nelv = this%coef%msh%nelv
-    print *, "lx = ", lx, "ly = ", ly, "lz = ", lz, "lxyz = ", lxyz
-    print *, "nelv = ", nelv, "this%n_nodes", this%n_nodes
-
-    ! Allocation of arrays
-    allocate(dudy(lx,ly,lz,nelv), usy(this%n_nodes), state(3,this%n_nodes), action(1,this%n_nodes))
-!     allocate(usx(lx,ly,lz,nelv), usy(lx,ly,lz,nelv), usz(lx,ly,lz,nelv))
-!     allocate(vsx(lx,ly,lz,nelv), vsy(lx,ly,lz,nelv), vsz(lx,ly,lz,nelv))
-!     allocate(wsx(lx,ly,lz,nelv), wsy(lx,ly,lz,nelv), wsz(lx,ly,lz,nelv))
-!     allocate(usn(this%n_nodes), vsn(this%n_nodes), wsn(this%n_nodes))
 
     u => neko_field_registry%get_field("u")
     v => neko_field_registry%get_field("v")
@@ -187,28 +189,15 @@ contains
     print *, "size(this%nx%x) = ", size(this%n_x%x)
 
     ! Gradient Tensor
-    call dudxyz(dudy, u%x, this%coef%drdy, this%coef%dsdy, this%coef%dtdy, this%coef)
-    print *, "size(dudy) = ", size(dudy)
-!     call grad(usx, usy, usz, u%x, this%coef)
-!     call grad(vsx, vsy, vsz, v%x, this%coef)
-!     call grad(wsx, wsy, wsz, w%x, this%coef)
-
-    res = torchfort_rl_off_policy_create_distributed_system(tf_key, yaml_path, NEKO_COMM, model_device, rb_device)
-    if (res /= TORCHFORT_RESULT_SUCCESS) stop
-    print *, "result of create_distributed_system: ", res
+    call dudxyz(this%dudy, u%x, this%coef%drdy, this%coef%dsdy, this%coef%dtdy, this%coef)
+    print *, "size(this%dudy) = ", size(this%dudy)
 
     do i=1, this%n_nodes
 
-      ! indices
-      ir = this%ind_r(i)
-      is = this%ind_s(i)
-      it = this%ind_t(i)
-      ie = this%ind_e(i)
-
       ! Sample the velocity
-      ui = u%x(ir, is, it, ie)
-      vi = v%x(ir, is, it, ie)
-      wi = w%x(ir, is, it, ie)
+      ui = u%x(this%ind_r(i), this%ind_s(i), this%ind_t(i), this%ind_e(i))
+      vi = v%x(this%ind_r(i), this%ind_s(i), this%ind_t(i), this%ind_e(i))
+      wi = w%x(this%ind_r(i), this%ind_s(i), this%ind_t(i), this%ind_e(i))
 
       ! Project on tangential direction
       normu = ui * this%n_x%x(i) + vi * this%n_y%x(i) + wi * this%n_z%x(i)
@@ -216,49 +205,85 @@ contains
       vi = vi - normu * this%n_y%x(i)
       wi = wi - normu * this%n_z%x(i)
 
-      ! Project gradients on wall-normal direction
-      usy(i) = dudy(ir,is,it,ie)
-!       unx = usx(ir,is,it,ie) * this%n_x%x(i)
-!       uny = usy(ir,is,it,ie) * this%n_y%x(i)
-!       unz = usz(ir,is,it,ie) * this%n_z%x(i)
-!       vnx = vsx(ir,is,it,ie) * this%n_x%x(i)
-!       vny = vsy(ir,is,it,ie) * this%n_y%x(i)
-!       vnz = vsz(ir,is,it,ie) * this%n_z%x(i)
-!       wnx = wsx(ir,is,it,ie) * this%n_x%x(i)
-!       wny = wsy(ir,is,it,ie) * this%n_y%x(i)
-!       wnz = wsz(ir,is,it,ie) * this%n_z%x(i)
-
-      ! Wall normal gradient of wall tangential velocity
-!       usn(i) = - this%n_x%x(i)*this%n_x%x(i)*unx + unx - this%n_x%x(i)*this%n_y%x(i)*uny - this%n_x%x(i)*this%n_z%x(i)*unz
-!       vsn(i) = - this%n_y%x(i)*this%n_y%x(i)*vny + vny - this%n_y%x(i)*this%n_x%x(i)*vnx - this%n_y%x(i)*this%n_z%x(i)*vnz
-!       wsn(i) = - this%n_z%x(i)*this%n_z%x(i)*wnz + wnz - this%n_z%x(i)*this%n_x%x(i)*wnx - this%n_z%x(i)*this%n_y%x(i)*wny
-
       ! Construct the state vector
-      state(1,i) = ui                 ! Instantaneous velocity
-      state(2,i) = dudy(ir,is,it,ie)  ! Wall-normal gradient
-      state(3,i) = this%h%x(i)        ! Distance from wall
-
-      if (i>=100 .and. i<=105) then
-        print *, "usy = ", usy(i)
-        print *, "state(1,i) = ", state(1,i)
-        print *, "state(2,i) = ", state(2,i)
-        print *, "state(3,i) = ", state(3,i)
-      end if
-
-!       print *, i, usn(i), vsn(i), wsn(i)
-!       write(*, '(A,I4,A,3(ES13.5))') 'Wall-normal grads at node ', i, ': ', usn(i), vsn(i), wsn(i)
+      this%state(1,i) = ui
+      this%state(2,i) = this%dudy(this%ind_r(i), this%ind_s(i), this%ind_t(i), this%ind_e(i))
+      this%state(3,i) = this%h%x(i)
 
       magu = sqrt(ui**2 + vi**2 + wi**2)
 
-      ! Get initial guess for Newton solver
-      if (tstep .eq. 1) then
-         guess = sqrt(magu * this%nu / this%h%x(i))
-      else
-         guess = this%tau_x(i)**2 + this%tau_y(i)**2 + this%tau_z(i)**2
-         guess = sqrt(sqrt(guess))
+      if (i>=100 .and. i<=105) then
+        print *, "this%state(1,i) = ", this%state(1,i)
+        print *, "this%state(2,i) = ", this%state(2,i)
+        print *, "this%state(3,i) = ", this%state(3,i)
       end if
 
-      utau =  this%solve(magu, this%h%x(i), guess)
+!       ! Get initial guess for Newton solver
+!       if (tstep .eq. 1) then
+!          guess = sqrt(magu * this%nu / this%h%x(i))
+!       else
+!          guess = this%tau_x(i)**2 + this%tau_y(i)**2 + this%tau_z(i)**2
+!          guess = sqrt(sqrt(guess))
+! !          guess = guess * this%action(1,i)
+!       end if
+!
+!       utau =  this%solve(magu, this%h%x(i), guess)
+! !       utau = sqrt(sqrt(guess))
+!
+!       ! Distribute according to the velocity vector
+!       this%tau_x(i) = -utau**2 * ui / magu
+!       this%tau_y(i) = -utau**2 * vi / magu
+!       this%tau_z(i) = -utau**2 * wi / magu
+
+    end do
+
+    print *, "shape(this%state) = ", shape(this%state)
+    print *, "shape(this%state) = ", shape(this%action)
+
+    res = torchfort_rl_off_policy_predict_float_2d_2d(tf_key, this%state, this%action)
+    if (res /= TORCHFORT_RESULT_SUCCESS) stop
+    print *, "result of predict_float_2d_2d: ", res
+
+    res = torchfort_rl_off_policy_is_ready(tf_key, is_ready)
+    if (res /= TORCHFORT_RESULT_SUCCESS) stop
+    print *, "result of policy_is_ready: ", res
+
+    ! Save state and action for next training
+    this%state_old(:,:) = this%state(:,:)
+    this%action_old(:,:) = this%action(:,:)
+
+!     res = torchfort_rl_off_policy_train_step_float(tf_key, p_loss_val, q_loss_val)
+!     if (res /= TORCHFORT_RESULT_SUCCESS) stop
+!     print *, "result of train_step_float: ", res
+
+    do i = 1, this%n_nodes
+
+      ! Sample the velocity
+      ui = u%x(this%ind_r(i), this%ind_s(i), this%ind_t(i), this%ind_e(i))
+      vi = v%x(this%ind_r(i), this%ind_s(i), this%ind_t(i), this%ind_e(i))
+      wi = w%x(this%ind_r(i), this%ind_s(i), this%ind_t(i), this%ind_e(i))
+
+      ! Project on tangential direction
+      normu = ui * this%n_x%x(i) + vi * this%n_y%x(i) + wi * this%n_z%x(i)
+      ui = ui - normu * this%n_x%x(i)
+      vi = vi - normu * this%n_y%x(i)
+      wi = wi - normu * this%n_z%x(i)
+
+      magu = sqrt(ui**2 + vi**2 + wi**2)
+
+      if (tstep .eq. 1) then
+        guess = sqrt(magu * this%nu / this%h%x(i))
+        utau =  this%solve(magu, this%h%x(i), guess)
+      else
+        tau_old = sqrt(this%tau_x(i)**2 + this%tau_y(i)**2 + this%tau_z(i)**2)
+        tau_new = tau_old * this%action(1,i)
+        utau = sqrt(tau_new)
+        this%reward(1,i) = -abs(tau_new-1.0)
+        if (i>=100 .and. i<=105) then
+!             print *, "this%action(1,i) = ", this%action(1,i)
+            print *, "this%reward(1,i) = ", this%reward(1,i)
+        end if
+      end if
 
       ! Distribute according to the velocity vector
       this%tau_x(i) = -utau**2 * ui / magu
@@ -267,33 +292,12 @@ contains
 
     end do
 
-    print *, "shape(state) = ", shape(state)
-    print *, "shape(state) = ", shape(action)
-
-    res = torchfort_rl_off_policy_predict_float_2d_2d(tf_key, state, action)
-    if (res /= TORCHFORT_RESULT_SUCCESS) stop
-    print *, "result of predict_float_2d_2d: ", res
-
-    res = torchfort_rl_off_policy_is_ready(tf_key, is_ready)
-    if (res /= TORCHFORT_RESULT_SUCCESS) stop
-    print *, "result of policy_is_ready: ", res
-
-    res = torchfort_rl_off_policy_train_step_float(tf_key, p_loss_val, q_loss_val)
-    if (res /= TORCHFORT_RESULT_SUCCESS) stop
-    print *, "result of train_step_float: ", res
-
-    do i = 1, this%n_nodes
-        if (i>=100 .and. i<=105) then
-            print *, "action(1,i) = ", action(1,i)
-        end if
-    end do
-
-    print *, "Rank ", pe_rank, this%n_nodes ! , size(usn), size(vsn), size(wsn)
-    print *, "size(usy) = ", size(usy), "size(state) = ", size(state)
+    print *, "--- Mean Reward over wall nodes ---"
+    print *, sum(this%reward)/this%n_nodes
+    print *, "--- --- --- --- --- --- --- --- ---"
 
     ! Deallocation of arrays
-    deallocate(dudy, usy, state, action)
-!     deallocate(usx, usy, usz, vsx, vsy, vsz, wsx, wsy, wsz, usn, vsn, wsn)
+!     deallocate(dudy, state, action)
 
   end subroutine spalding_compute
 
