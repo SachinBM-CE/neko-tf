@@ -52,6 +52,7 @@ module spalding
   use utils, only : linear_index
   use tf_module
   use iso_c_binding
+  use math
 
   implicit none
   private
@@ -64,7 +65,7 @@ module spalding
      !> The log-law intercept.
      real(kind=rp) :: B = 5.2_rp
      real(kind=rp), dimension(:,:,:,:), allocatable :: dudy
-     real(kind=sp), dimension(:,:), allocatable :: state, action, reward ! real(c_float)
+     real(kind=rp), dimension(:,:), allocatable :: state, action, reward ! real(c_float)
    contains
      !> Constructor from JSON.
      procedure, pass(this) :: init => spalding_init
@@ -97,23 +98,28 @@ contains
     type(json_file), intent(inout) :: json
     real(kind=rp) :: kappa, B
     integer :: lx, ly, lz, lxyz, nelv
+    logical :: found
 
     call json_get_or_default(json, "kappa", kappa, 0.41_rp)
     call json_get_or_default(json, "B", B, 5.2_rp)
 
     call this%init_from_components(coef, msk, facet, nu, h_index, kappa, B)
 
-    lx = this%coef%Xh%lx
-    ly = this%coef%Xh%ly
-    lz = this%coef%Xh%lz
-    lxyz = this%coef%Xh%lxyz
-    nelv = this%coef%msh%nelv
+    lx = coef%Xh%lx
+    ly = coef%Xh%ly
+    lz = coef%Xh%lz
+    lxyz = coef%Xh%lxyz
+    nelv = coef%msh%nelv
     print *, "lx = ", lx, "ly = ", ly, "lz = ", lz, "lxyz = ", lxyz
     print *, "nelv = ", nelv, "this%n_nodes", this%n_nodes
 
     ! Allocation of arrays
     allocate(this%dudy(lx,ly,lz,nelv))
     allocate(this%state(3,this%n_nodes), this%action(1,this%n_nodes), this%reward(1,this%n_nodes))
+
+    call neko_field_registry%add_field(coef%dof, "state_old", ignore_existing = .true.)
+!     found = neko_field_registry%field_exists("state_old")
+!     print *, "state_old field_exists: ", found
 
     print *, "spalding_init called!"
 
@@ -146,6 +152,7 @@ contains
 
     this%kappa = kappa
     this%B = B
+
   end subroutine spalding_init_from_components
 
 
@@ -176,17 +183,22 @@ contains
     type(field_t), pointer :: w
     integer :: i
     real(kind=rp) :: ui, vi, wi, magu, utau, normu, guess, tau_old, tau_new
+    type(field_t), pointer :: state_old
 
     ! TorchFort
     integer :: res
     logical :: is_ready = .false.
     real(kind=sp) :: p_loss_val, q_loss_val
+    type(field_t), pointer :: u_prev
 
     u => neko_field_registry%get_field("u")
     v => neko_field_registry%get_field("v")
     w => neko_field_registry%get_field("w")
+
     print *, "size(u%x) = ", size(u%x)
     print *, "size(this%nx%x) = ", size(this%n_x%x)
+
+    u_prev => neko_field_registry%get_field("u_older")
 
     ! Gradient Tensor
     call dudxyz(this%dudy, u%x, this%coef%drdy, this%coef%dsdy, this%coef%dtdy, this%coef)
@@ -212,10 +224,13 @@ contains
 
       magu = sqrt(ui**2 + vi**2 + wi**2)
 
-      if (i>=100 .and. i<=105) then
-        print *, "this%state(1,i) = ", this%state(1,i)
-        print *, "this%state(2,i) = ", this%state(2,i)
-        print *, "this%state(3,i) = ", this%state(3,i)
+      if (i>=1 .and. i<=5) then
+!         print *, "this%state(1,i) = ", this%state(1,i)
+!         print *, "this%state(2,i) = ", this%state(2,i)
+!         print *, "this%state(3,i) = ", this%state(3,i)
+        print *, "1st do loop:", "t = ", t
+        print *, "u = ", u%x(this%ind_r(i), this%ind_s(i), this%ind_t(i), this%ind_e(i))
+        print *, "u_prev = ", u_prev%x(this%ind_r(i), this%ind_s(i), this%ind_t(i), this%ind_e(i))
       end if
 
 !       ! Get initial guess for Newton solver
@@ -237,6 +252,13 @@ contains
 
     end do
 
+    state_old => neko_field_registry%get_field("state_old")
+    print *, "***** Before COPY *****"
+    call copy(state_old%x, this%state, size(this%state))
+    print *, "size(state_old%x) = ", size(state_old%x)
+    print *, "shape(state_old%x) = ", shape(state_old%x)
+    print *, "***** After COPY *****"
+
     print *, "shape(this%state) = ", shape(this%state)
     print *, "shape(this%state) = ", shape(this%action)
 
@@ -249,8 +271,8 @@ contains
     print *, "result of policy_is_ready: ", res
 
     ! Save state and action for next training
-    this%state_old(:,:) = this%state(:,:)
-    this%action_old(:,:) = this%action(:,:)
+!     this%state_old(:,:) = this%state(:,:)
+!     this%action_old(:,:) = this%action(:,:)
 
 !     res = torchfort_rl_off_policy_train_step_float(tf_key, p_loss_val, q_loss_val)
 !     if (res /= TORCHFORT_RESULT_SUCCESS) stop
@@ -279,8 +301,10 @@ contains
         tau_new = tau_old * this%action(1,i)
         utau = sqrt(tau_new)
         this%reward(1,i) = -abs(tau_new-1.0)
-        if (i>=100 .and. i<=105) then
+        if (i>=1 .and. i<=5) then
 !             print *, "this%action(1,i) = ", this%action(1,i)
+!             print *, "this%state(1,i) = ", this%state(1,i)
+!             print *, "state_old(1,i) = ", state_old%x(this%ind_r(i), this%ind_s(i), this%ind_t(i), this%ind_e(i))
             print *, "this%reward(1,i) = ", this%reward(1,i)
         end if
       end if

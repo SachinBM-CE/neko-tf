@@ -2,6 +2,8 @@
 ! updated initial condition Philipp Schlatter 09/07/2024
 module user
   use neko
+  use field_registry, only : neko_field_registry ! TorchFort
+  use math ! TorchFort
   implicit none
 
 contains
@@ -11,7 +13,32 @@ contains
     type(user_t), intent(inout) :: u
     u%fluid_user_ic => user_ic
     u%user_mesh_setup => user_mesh_scale
+    u%user_init_modules => initialize ! TorchFort
+    u%user_check => usercheck ! TorchFort
   end subroutine user_setup
+
+  ! Initialize user variables or external objects
+  subroutine initialize(t, u, v, w, p, coef, params)
+    real(kind=rp) :: t
+    type(field_t), intent(inout) :: u
+    type(field_t), intent(inout) :: v
+    type(field_t), intent(inout) :: w
+    type(field_t), intent(inout) :: p
+    type(coef_t), intent(inout) :: coef
+    type(json_file), intent(inout) :: params
+
+    ! insert your initialization code here
+    logical :: found
+
+    call neko_field_registry%add_field(coef%dof, "u_old")
+    found = neko_field_registry%field_exists("u_old")
+    print *, "u_old field_exists: ", found
+
+    call neko_field_registry%add_field(coef%dof, "u_older")
+    found = neko_field_registry%field_exists("u_older")
+    print *, "u_older field_exists: ", found
+
+  end subroutine initialize
 
   ! Rescale mesh, we create a mesh with some refinement close to the wall.
   ! initial mesh: 0..4, -1..1, 0..1.5
@@ -75,6 +102,45 @@ contains
        w%x(i,1,1,1) = uvw(3)
     end do
   end subroutine user_ic
+
+  ! This is called at the end of every time step
+  subroutine usercheck(t, tstep, u, v, w, p, coef, param)
+    real(kind=rp), intent(in) :: t
+    integer, intent(in) :: tstep
+    type(coef_t), intent(inout) :: coef
+    type(field_t), intent(inout) :: u
+    type(field_t), intent(inout) :: v
+    type(field_t), intent(inout) :: w
+    type(field_t), intent(inout) :: p
+    type(json_file), intent(inout) :: param
+
+    ! insert code below
+    type(field_t), pointer :: u_old, u_older, dudy_old
+    integer :: i,j,k,e
+
+    u_old => neko_field_registry%get_field("u_old")
+    u_older => neko_field_registry%get_field("u_older")
+
+    print *, "***** USERCHECK *****"
+    do e = 1, 2
+      do k = 1, 2
+        do j = 1, 2
+          do i = 1, 2
+            print *, u_older%x(i,j,k,e), u_old%x(i,j,k,e),  u%x(i,j,k,e)
+          end do
+        end do
+      end do
+    end do
+     print *, "***** USERCHECK *****"
+!      call dudxyz(dudy, u%x, coef%drdy, coef%dsdy, coef%dtdy, coef)
+
+    print *, "coef%dof%size() = ", coef%dof%size()
+    print *, "size(u%x) = ", size(u%x)
+    call copy(u_older%x, u_old%x, size(u_old%x))
+    call copy(u_old%x, u%x, size(u%x)) ! coef%dof%size()
+!     call copy(dudy_old%x, u%x, size(u%x)) ! coef%dof%size()
+
+  end subroutine usercheck
 
   ! Kind of brute force with rather large initial disturbances
   function channel_ic(x, y, z) result(uvw)
