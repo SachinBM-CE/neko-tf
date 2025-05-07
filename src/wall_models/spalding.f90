@@ -65,7 +65,8 @@ module spalding
      !> The log-law intercept.
      real(kind=rp) :: B = 5.2_rp
      real(kind=rp), dimension(:,:,:,:), allocatable :: dudy
-     real(kind=rp), dimension(:,:), allocatable :: state, action, reward ! real(c_float)
+     real(kind=rp), dimension(:,:), allocatable :: state, action, state_2d ! real(c_float)
+     real(kind=rp), dimension(:), allocatable :: reward
    contains
      !> Constructor from JSON.
      procedure, pass(this) :: init => spalding_init
@@ -114,10 +115,13 @@ contains
     print *, "nelv = ", nelv, "this%n_nodes", this%n_nodes
 
     ! Allocation of arrays
-    allocate(this%dudy(lx,ly,lz,nelv))
-    allocate(this%state(3,this%n_nodes), this%action(1,this%n_nodes), this%reward(1,this%n_nodes))
+    allocate(this%dudy(lx,ly,lz,nelv), this%state_2d(3,this%n_nodes))
+    allocate(this%state(3,this%n_nodes), this%action(1,this%n_nodes), this%reward(this%n_nodes))
 
     call neko_field_registry%add_field(coef%dof, "state_old", ignore_existing = .true.)
+    call neko_field_registry%add_field(coef%dof, "state_older", ignore_existing = .true.)
+    call neko_field_registry%add_field(coef%dof, "action_old", ignore_existing = .true.)
+    call neko_field_registry%add_field(coef%dof, "action_older", ignore_existing = .true.)
 !     found = neko_field_registry%field_exists("state_old")
 !     print *, "state_old field_exists: ", found
 
@@ -166,6 +170,7 @@ contains
     if (allocated(this%state)) deallocate(this%state)
     if (allocated(this%action)) deallocate(this%action)
     if (allocated(this%reward)) deallocate(this%reward)
+    if (allocated(this%state_2d)) deallocate(this%state_2d)
 
     print *, "spalding_free called!"
 
@@ -181,9 +186,9 @@ contains
     type(field_t), pointer :: u
     type(field_t), pointer :: v
     type(field_t), pointer :: w
-    integer :: i
+    integer :: i, zeros
     real(kind=rp) :: ui, vi, wi, magu, utau, normu, guess, tau_old, tau_new
-    type(field_t), pointer :: state_old
+    type(field_t), pointer :: state_old, state_older, action_old, action_older
 
     ! TorchFort
     integer :: res
@@ -225,12 +230,12 @@ contains
       magu = sqrt(ui**2 + vi**2 + wi**2)
 
       if (i>=1 .and. i<=5) then
-!         print *, "this%state(1,i) = ", this%state(1,i)
+        print *, "this%state(1,i) = ", this%state(1,i)
 !         print *, "this%state(2,i) = ", this%state(2,i)
 !         print *, "this%state(3,i) = ", this%state(3,i)
         print *, "1st do loop:", "t = ", t
-        print *, "u = ", u%x(this%ind_r(i), this%ind_s(i), this%ind_t(i), this%ind_e(i))
-        print *, "u_prev = ", u_prev%x(this%ind_r(i), this%ind_s(i), this%ind_t(i), this%ind_e(i))
+!         print *, "u = ", u%x(this%ind_r(i), this%ind_s(i), this%ind_t(i), this%ind_e(i))
+!         print *, "u_prev = ", u_prev%x(this%ind_r(i), this%ind_s(i), this%ind_t(i), this%ind_e(i))
       end if
 
 !       ! Get initial guess for Newton solver
@@ -239,7 +244,7 @@ contains
 !       else
 !          guess = this%tau_x(i)**2 + this%tau_y(i)**2 + this%tau_z(i)**2
 !          guess = sqrt(sqrt(guess))
-! !          guess = guess * this%action(1,i)
+! !          guess = guess * this%action(i)
 !       end if
 !
 !       utau =  this%solve(magu, this%h%x(i), guess)
@@ -253,14 +258,30 @@ contains
     end do
 
     state_old => neko_field_registry%get_field("state_old")
+    state_older => neko_field_registry%get_field("state_older")
+    action_old => neko_field_registry%get_field("action_old")
+    action_older => neko_field_registry%get_field("action_older")
+
     print *, "***** Before COPY *****"
-    call copy(state_old%x, this%state, size(this%state))
+!     call copy(state_old%x, this%state, size(this%state))
     print *, "size(state_old%x) = ", size(state_old%x)
     print *, "shape(state_old%x) = ", shape(state_old%x)
+    print *, "state_old%x(1,1) = ", state_old%x(1,1,1,1)
+    print *, "action_old%x(1,1) = ", action_old%x(1,1,1,1)
+    zeros = count(state_old%x == 0.0)
+    print *, "Zeros in state_old%x = ", zeros
+!     call copy(state_older%x, state_old%x, size(state_old%x))
+    print *, "size(state_older%x) = ", size(state_older%x)
+    print *, "shape(state_older%x) = ", shape(state_older%x)
+    print *, "state_older%x(1,1) = ", state_older%x(1,1,1,1)
+    print *, "action_older%x(1,1) = ", action_older%x(1,1,1,1)
+    this%state_2d = reshape(state_older%x, [3,this%n_nodes])
+    zeros = count(this%state_2d == 0.0)
+    print *, "Zeros in this%state_2d = ", zeros
     print *, "***** After COPY *****"
 
     print *, "shape(this%state) = ", shape(this%state)
-    print *, "shape(this%state) = ", shape(this%action)
+    print *, "shape(this%action) = ", shape(this%action)
 
     res = torchfort_rl_off_policy_predict_float_2d_2d(tf_key, this%state, this%action)
     if (res /= TORCHFORT_RESULT_SUCCESS) stop
@@ -300,13 +321,13 @@ contains
         tau_old = sqrt(this%tau_x(i)**2 + this%tau_y(i)**2 + this%tau_z(i)**2)
         tau_new = tau_old * this%action(1,i)
         utau = sqrt(tau_new)
-        this%reward(1,i) = -abs(tau_new-1.0)
-        if (i>=1 .and. i<=5) then
-!             print *, "this%action(1,i) = ", this%action(1,i)
+        this%reward(i) = -abs(tau_new-1.0)
+!         if (i>=1 .and. i<=5) then
+!             print *, "this%action(i) = ", this%action(i)
 !             print *, "this%state(1,i) = ", this%state(1,i)
 !             print *, "state_old(1,i) = ", state_old%x(this%ind_r(i), this%ind_s(i), this%ind_t(i), this%ind_e(i))
-            print *, "this%reward(1,i) = ", this%reward(1,i)
-        end if
+!             print *, "this%reward(i) = ", this%reward(i)
+!         end if
       end if
 
       ! Distribute according to the velocity vector
