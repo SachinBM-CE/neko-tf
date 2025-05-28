@@ -16,12 +16,12 @@ class PolicyFunc(nn.Module):
     def __init__(self, hidden_features=128):
         super(PolicyFunc, self).__init__()
 
-        layers = [nn.Linear(in_features = 4,
+        layers = [nn.Linear(in_features = 3,
                             out_features = hidden_features,
                             bias=True),
                   nn.ReLU(),
                   nn.Linear(in_features = hidden_features,
-                            out_features = hidden_features // 2,
+                            out_features = hidden_features,
                             bias=True),
                   nn.ReLU(),
                   nn.Linear(in_features = hidden_features // 2,

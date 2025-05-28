@@ -8,27 +8,34 @@
         "output_checkpoints": true,
         "checkpoint_control": "simulationtime",
         "checkpoint_value": 50,
-        "end_time": 0.2,
-        "variable_timestep": true,
+        "end_time": 0.5,
+        "variable_timestep": false,
         "target_cfl": 0.5,
         "max_timestep": 1e-1,
         // "restart_file": "les00001.chkp",
-        "timestep": 1e-2,
+        "timestep": 1e-1,
         "numerics":
         {
             "time_order": 3,
-            "polynomial_order": 3,
+            "polynomial_order": 5,
             "dealias": true
         },
         "fluid":
         {
             "nut_field": "nut",
             "scheme": "pnpn",
-            "output_control": "tsteps",
-            "output_value": 100,
+            "output_control": "simulationtime",
+            "output_value": 0.1,
             // "mu": 8e-6,
             // "rho": 1,
             "Re": 2800,
+            "source_terms":
+            [
+                {
+                    "type": "constant",
+                    "values": [-0.004132653061224489, 0.0, 0.0]
+                }
+            ],
             "initial_condition":
             {
                 "type": "user"
@@ -48,12 +55,6 @@
                 "projection_space_size": 0,
                 "absolute_tolerance": 1e-3,
                 "max_iterations": 800
-            },
-            "flow_rate_force":
-            {
-                "direction": 1,
-                "value": 1.0,
-                "use_averaged_flow": true
             },
             "boundary_conditions":
             [
@@ -89,23 +90,23 @@
                 "model": "vreman",
                 "nut_field": "nut",
                 "compute_control": "tsteps",
-                "compute_value": 10,
+                "compute_value": 1000,
                 "output_control" : "global", // global syncs the output_ parameter to that of the fluid
                 "output_filename" : "les"
             },
             {
                 "type": "force_torque",
                 "compute_control": "tsteps",
-                "compute_value": 10,
+                "compute_value": 100,
                 "zone_id": 3,
                 "zone_name": "Bottom wall",
                 "center": [0,0,0],
-                "scale": 0.08261701266432
+                "scale": 0.08261701266432 // change accordingly 0.018997721932938336
             },
             {
                 "type": "force_torque",
                 "compute_control": "tsteps",
-                "compute_value": 10,
+                "compute_value": 100,
                 "zone_id": 4,
                 "zone_name": "Top wall",
                 "center": [0,0,0],
@@ -114,10 +115,10 @@
             {
                 "type": "fluid_stats",
                 "output_control": "simulationtime",
-                "output_value": 50,
+                "output_value": 10,
                 "start_time": 50,
                 "compute_control": "tsteps",
-                "compute_value": 5,
+                "compute_value": 10,
                 "avg_direction": "xz",
                 "set_of_stats": "basic"
             }

@@ -156,12 +156,12 @@ contains
     call neko_log%init()
     call neko_field_registry%init()
 
-!     tf_sys_status = torchfort_rl_off_policy_create_system(tf_key, yaml_path, model_device, rb_device)
-!     if (tf_sys_status /= TORCHFORT_RESULT_SUCCESS) stop
-!     print *, "result of torchfort_rl_off_policy_create_system: ", tf_sys_status
-    res = torchfort_rl_off_policy_create_distributed_system(tf_key, yaml_path, NEKO_COMM, model_device, rb_device)
-    if (res /= TORCHFORT_RESULT_SUCCESS) stop
-    print *, "result of create_distributed_system: ", res
+    tf_sys_status = torchfort_rl_off_policy_create_system(tf_key, yaml_path, model_device, rb_device)
+    if (tf_sys_status /= TORCHFORT_RESULT_SUCCESS) stop
+    print *, "result of torchfort_rl_off_policy_create_system: ", tf_sys_status
+!     res = torchfort_rl_off_policy_create_distributed_system(tf_key, yaml_path, NEKO_COMM, model_device, rb_device)
+!     if (res /= TORCHFORT_RESULT_SUCCESS) stop
+!     print *, "result of create_distributed_system: ", res
 
     call neko_log%header(NEKO_VERSION, NEKO_BUILD_INFO)
 
@@ -225,6 +225,12 @@ contains
   !> Finalize Neko
   subroutine neko_finalize(C)
     type(case_t), intent(inout), optional :: C
+    integer :: tf_sys_status
+
+    tf_sys_status = torchfort_rl_off_policy_save_checkpoint(tf_key, &
+    "/tmp/sachinbm/neko-tf/neko/examples/turb_channel/log_dir/les_2_model.pt")
+    if (tf_sys_status /= TORCHFORT_RESULT_SUCCESS) stop
+    print *, "result of torchfort_rl_off_save_checkpoint: ", tf_sys_status
 
     call neko_rt_stats%report()
     call neko_rt_stats%free()
