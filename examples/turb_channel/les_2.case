@@ -8,12 +8,12 @@
         "output_checkpoints": true,
         "checkpoint_control": "simulationtime",
         "checkpoint_value": 50,
-        "end_time": 0.5,
+        "end_time": 0.3,
         "variable_timestep": false,
         "target_cfl": 0.5,
         "max_timestep": 1e-1,
         // "restart_file": "les00001.chkp",
-        "timestep": 1e-1,
+        "timestep": 1e-2,
         "numerics":
         {
             "time_order": 3,

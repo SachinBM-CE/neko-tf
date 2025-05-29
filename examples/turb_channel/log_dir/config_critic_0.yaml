@@ -32,15 +32,13 @@ actor:
     a_low: 0.9
     a_high: 1.1
 policy_model:
-  type: SACMLP
+  type: torchscript
   parameters:
-    dropout: 0.0
-    layer_sizes: [3, 128, 128, 1]
+    filename: policy.pt
 critic_model:
-  type: MLP
+  type: torchscript
   parameters:
-    dropout: 0.0
-    layer_sizes: [4, 128, 128, 1]
+    filename: value.pt
 policy_lr_scheduler:
   type: cosine_annealing
   parameters:
