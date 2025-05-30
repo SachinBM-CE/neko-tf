@@ -3,16 +3,6 @@ general:
   enable_wandb_hook: 1
   verbose: 1
 
-optimizer:
-  type: adam
-  parameters:
-    learning_rate: 1e-6
-    beta1: 0.9
-    beta2: 0.999
-    weight_decay: 0
-    eps: 1e-6
-    amsgrad: 0
-
 algorithm:
   type: sac
   parameters:
@@ -22,6 +12,13 @@ algorithm:
     num_critics: 1
     gamma: 0.995
     rho: 0.99
+    alpha: 0.1
+
+actor:
+  type: space_noise # parameter_noise
+  parameters:
+    a_low: 0.9
+    a_high: 1.1
 
 replay_buffer:
   type: uniform
@@ -33,12 +30,6 @@ replay_buffer:
     #single env -
     #max_size: 50000
     #min_size: 1024
-
-actor:
-  type: space_noise # parameter_noise
-  parameters:
-    a_low: 0.9
-    a_high: 1.1
   
 #policy_model:
   #type: SACMLP
@@ -61,6 +52,16 @@ critic_model:
   type: torchscript
   parameters:
     filename: value.pt
+
+optimizer:
+  type: adam
+  parameters:
+    learning_rate: 1e-6
+    beta1: 0.9
+    beta2: 0.999
+    weight_decay: 0
+    eps: 1e-6
+    amsgrad: 0
 
 policy_lr_scheduler:
   type: cosine_annealing
