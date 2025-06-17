@@ -6,6 +6,7 @@ batch_time = 100
 stress_file = 'Re2800_out' # out_DNS' 
 csv_file = 'fluid_stats0.csv'
 
+# ***********************************************************************************
 # >>>>> Step 1: <<<<<
 # Extraction of stress in stream-wise direction
 # https://github.com/ExtremeFLOW/neko/blob/develop/examples/turb_channel/README.md
@@ -13,6 +14,7 @@ csv_file = 'fluid_stats0.csv'
 # awk '/forcex/ {print($1,$2,$3)} ' my_log > out
 # ***********************************************************************************
 
+# *******************************
 # >>>>> Step 2: <<<<<
 # Evolution of Re_tau with Time
 # *******************************
@@ -43,6 +45,7 @@ plt.legend()
 plt.savefig('01_Re2800_Spalding_Re_tau_Time.png', dpi=300, bbox_inches='tight')
 plt.show()
 
+# ***********************
 # >>>>> Step 3: <<<<<
 # Turbulence Statistics
 # ***********************

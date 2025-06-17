@@ -19,14 +19,10 @@ class PolicyFunc(nn.Module):
         # Define common layers for the policy network
         # Input features are 3 (state_dim) as per initialize_models.py
         self.common_layers = nn.Sequential(
-            nn.Linear(in_features = 3,
-                      out_features = hidden_features,
-                      bias=True),
+            nn.Linear(in_features = 3, out_features = hidden_features, bias=True),
             nn.Softsign(),
-            nn.Linear(in_features = hidden_features,
-                      out_features = hidden_features,
-                      bias=True),
-            nn.Softsign()
+            nn.Linear(in_features = hidden_features, out_features = hidden_features, bias=True),
+            nn.Tanh()
         )
 
         # Output layer for the mean (mu) of the Gaussian distribution
@@ -50,6 +46,11 @@ class PolicyFunc(nn.Module):
         
         # Get the log standard deviation (log_sigma) from the log_sigma_layer
         log_sigma = self.log_sigma_layer(h)
+        log_sigma = torch.clamp(log_sigma, min=1e-6, max=1)
+
+        # If you need to reshape to [batch_size, 1, 1]:
+##        mu = mu.unsqueeze(-1)       # Adds a dimension at the end. Shape: [batch_size, 1, 1]
+##        log_sigma = log_sigma.unsqueeze(-1) # Shape: [batch_size, 1, 1]
 
         # Return both mu and log_sigma as a tuple
         return mu, log_sigma
@@ -60,18 +61,11 @@ class ValueFunc(nn.Module):
 
         # Layers for the Value Function (Critic)
         # Input features are 4 (3 state_dim + 1 action_dim)
-        layers = [nn.Linear(in_features = 4,
-                            out_features = hidden_features,
-                            bias=True),
+        layers = [nn.Linear(in_features = 4, out_features = hidden_features, bias=True),
                   nn.Softsign(),
-                  nn.Linear(in_features = hidden_features,
-                            out_features = hidden_features,
-                            bias=True),
+                  nn.Linear(in_features = hidden_features, out_features = hidden_features, bias=True),
                   nn.Softsign(),
-                  nn.Linear(in_features = hidden_features,
-                            out_features = 1,
-                            bias=True),
-                  nn.Softsign()]
+                  nn.Linear(in_features = hidden_features, out_features = 1, bias=True)]
 
         self.fwd = nn.Sequential(*layers)
 

@@ -73,7 +73,6 @@ module spalding
      real(kind=rp), dimension(:), allocatable :: l_star, u_plus, g_plus, h_plus
      real(kind=rp), dimension(:), allocatable :: ui_l, vi_l, wi_l, normu_l, magu_l, vg_l, utau_l, tau_old_l, tau_new_l
      real(kind=rp), dimension(:), allocatable :: error_new_l, error_old_l, base_reward_l, rel_error_l, bonus_l
-     real(kind=rp), dimension(:,:), allocatable :: state_transposed, action_transposed, d1, d2
 
    contains
      !> Constructor from JSON.
@@ -127,8 +126,6 @@ contains
     this%tau_old_l(this%n_nodes), this%tau_new_l(this%n_nodes), this%error_new_l(this%n_nodes), this%error_old_l(this%n_nodes), &
     this%base_reward_l(this%n_nodes), this%rel_error_l(this%n_nodes), this%bonus_l(this%n_nodes), &
     this%so(this%n_nodes,3), this%sor(this%n_nodes,3), this%ao(this%n_nodes,1), this%aor(this%n_nodes,1))
-
-    allocate(this%state_transposed(3, this%n_nodes), this%action_transposed(1, this%n_nodes), this%d1(3,3), this%d2(1,3))
 
     ! Adding new fields to Neko Field Registry
 !     call neko_field_registry%add_field(coef%dof, "state_old", ignore_existing = .true.)
@@ -211,11 +208,6 @@ contains
     if (allocated(this%so)) deallocate(this%so)
     if (allocated(this%sor)) deallocate(this%sor)
 
-    if (allocated(this%state_transposed)) deallocate(this%state_transposed)
-    if (allocated(this%action_transposed)) deallocate(this%action_transposed)
-    if (allocated(this%d1)) deallocate(this%d1)
-    if (allocated(this%d2)) deallocate(this%d2)
-
     print *, "spalding_free called!"
 
   end subroutine spalding_free
@@ -273,21 +265,19 @@ contains
       this%vi_l(i) = this%vi_l(i) - this%normu_l(i) * this%n_y%x(i)
       this%wi_l(i) = this%wi_l(i) - this%normu_l(i) * this%n_z%x(i)
 
-      ! Magnitude of tangential velocity
       this%magu_l(i) = sqrt(this%ui_l(i)**2 + this%vi_l(i)**2 + this%wi_l(i)**2)
 
-      if (tstep .le. 3) then
+      if (tstep .eq. 1) then
 
         this%vg_l(i) = sqrt(this%magu_l(i) * this%nu / this%h%x(i))
         this%utau_l(i) =  this%solve(this%magu_l(i), this%h%x(i), this%vg_l(i))
 
-        ! Un-normalized states
         this%state(i,1) = this%magu_l(i)
         this%state(i,2) = this%dudy(this%ind_r(i), this%ind_s(i), this%ind_t(i), this%ind_e(i))
         this%state(i,3) = this%h%x(i)
 
-        if (i >= 100 .and. i <= 105) then
-            if (i == 100) then
+        if (i >= 1 .and. i <= 5) then
+            if (i == 1) then
                 write(*, '(A20, F10.4)') '1st do loop: t =', t
                 write(*, '(A6, 2X, A20, 2X, A20, 2X, A20)') &
                     'i', 'state(i,1)', 'state(i,2)', 'state(i,3)'
@@ -304,18 +294,18 @@ contains
 
         ! Normalization of inputs
         this%l_star(i) = this%nu / this%utau_l(i)
-        this%u_plus(i) = this%magu_l(i) / (this%utau_l(i) + 1e-6)
+        this%u_plus(i) = this%magu_l(i) / this%utau_l(i)
         this%g_plus(i) = this%dudy(this%ind_r(i), this%ind_s(i), this%ind_t(i), this%ind_e(i)) &
-        / ( (this%utau_l(i) + 1e-6) / this%l_star(i))
-        this%h_plus(i) = this%h%x(i) / (this%l_star(i) + 1e-6)
+        / (this%utau_l(i) / this%l_star(i))
+        this%h_plus(i) = this%h%x(i) / this%l_star(i)
 
         ! Changing to normalized states
         this%state(i,1) = this%u_plus(i)
         this%state(i,2) = this%g_plus(i)
         this%state(i,3) = this%h_plus(i)
 
-        if (i >= 100 .and. i <= 105) then
-            if (i == 100) then
+        if (i >= 1 .and. i <= 5) then
+            if (i == 1) then
             write(*, '(A20, F10.4)') '1st do loop: t =', t
             write(*, '(A6, 2X, A20, 2X, A20, 2X, A20, 2X, A20)') &
                 'i', 'state(i,1)', 'state(i,2)', 'state(i,3)', 'utau_l(i)'
@@ -328,36 +318,14 @@ contains
 
     end do ! End of 1st Do Loop
 
-!     if (tstep .gt. 3) then
-      this%state_transposed = transpose(this%state)
-      print *, '  Shape State : ', shape(this%state_transposed)
-      print *, '  Min value   : ', minval(this%state_transposed)
-      print *, '  Max value   : ', maxval(this%state_transposed)
-      this%action_transposed = transpose(this%action)
+    res = torchfort_rl_off_policy_predict_float_2d_2d(tf_key, transpose(this%state), transpose(this%action))
+    if (res /= TORCHFORT_RESULT_SUCCESS) stop
+    print *, "result of predict_float_2d_2d: ", res
 
-!       this%d1 = reshape([1.1_rp, 1.2_rp, 1.3_rp, 2.1_rp, 2.2_rp, 2.3_rp, 3.1_rp, 3.2_rp, 3.3_rp], [3, 3])
-!       print *, this%d1
-!       res = torchfort_rl_off_policy_predict(tf_key, this%d1, this%d2)
-!       print *
-!       print *, '*** ACTION ***', this%d2
-!       print *
-      res = torchfort_rl_off_policy_predict(tf_key, this%state_transposed, this%action_transposed)
-      print *, '  Shape Action : ', shape(this%action_transposed)
-      print *, '  Min value    : ', minval(this%action_transposed)
-      print *, '  Max value    : ', maxval(this%action_transposed)
-      if (res /= TORCHFORT_RESULT_SUCCESS) stop
-      print *, "result of predict_float: ", res
-      print *
-
-!     end if
-
-      res = torchfort_rl_off_policy_predict_explore(tf_key, this%state_transposed, this%action_transposed)
-      print *, '  Shape Action : ', shape(this%action_transposed)
-      print *, '  Min value    : ', minval(this%action_transposed)
-      print *, '  Max value    : ', maxval(this%action_transposed)
-      if (res /= TORCHFORT_RESULT_SUCCESS) stop
-      print *, "result of predict_explore: ", res
-      print *
+!     res = torchfort_rl_off_policy_predict_explore_float_2d_2d(tf_key, reshape(this%state, [3,this%n_nodes]), &
+!     reshape(this%action, [1,this%n_nodes]))
+!     if (res /= TORCHFORT_RESULT_SUCCESS) stop
+!     print *, "result of predict_explore: ", res
 
     ! Get fields from Neko Field Registry
 !     state_old => neko_field_registry%get_field("state_old")
@@ -367,10 +335,9 @@ contains
     terminal_old => neko_field_registry%get_field("terminal_old")
 
     print *, "====== Start of 2nd do loop ======"
-
     do i = 1, this%n_nodes
 
-      if (tstep .le. 3) then ! if (tstep .eq. 1) then
+      if (tstep .eq. 1) then
 
         ! Distribute according to the velocity vector
         this%tau_x(i) = -this%utau_l(i)**2 * this%ui_l(i) / this%magu_l(i)
@@ -410,7 +377,7 @@ contains
       if (i >= 1 .and. i <= 5) then
         if (i == 1) then
             write(*, '(A6, 2X, A10, 2X, A10, 2X, A15, 2X, A15, 2X, A15, 2X, A20)') &
-                'i', 'tau_old', 'tau_new', 'sor', 'aor', 'state', 'total_reward'
+                'i', 'tau_old', 'tau_new', 'sor', 'ao', 'state', 'total_reward'
         end if
         write(*, '(I6, 2X, ES10.3, 2X, ES10.3, 2X, ES15.6, 2X, ES15.6, 2X, ES15.6, 2X, ES15.6)') &
         i, this%tau_old_l(i), this%tau_new_l(i), this%sor(i,1), this%ao(i,1), this%state(i,1), &
@@ -420,32 +387,24 @@ contains
     end do
     print *, "====== End of 2nd do loop ======"
 
-    ! Replay Buffer & Train (When using RL)
-    if (tstep .gt. 3) then
+    res = torchfort_rl_off_policy_update_replay_buffer_multi_float_2d_2d(tf_key, &
+    transpose(this%sor), transpose(this%ao), transpose(this%state), &
+    transpose(this%total_reward), transpose(this%terminal))
+    if (res /= TORCHFORT_RESULT_SUCCESS) stop
+    print *, "result of update_replay_buffer_multi: ", res
 
-        res = torchfort_rl_off_policy_update_replay_buffer(tf_key, &
-        transpose(this%sor), transpose(this%ao), transpose(this%state), &
-        transpose(this%total_reward), transpose(this%terminal))
-        if (res /= TORCHFORT_RESULT_SUCCESS) stop
-        print *, "result of update_replay_buffer [Multi]: ", res
-        print *
+    res = torchfort_rl_off_policy_is_ready(tf_key, is_ready)
+    if (res /= TORCHFORT_RESULT_SUCCESS) stop
+    print *, "result of policy_is_ready: ", res
 
-        res = torchfort_rl_off_policy_is_ready(tf_key, is_ready)
-        if (res /= TORCHFORT_RESULT_SUCCESS) stop
-        print *, "result of policy_is_ready: ", res
-        print *
+    res = torchfort_rl_off_policy_train_step_float(tf_key, p_loss_val, q_loss_val)
+    print *, "p_loss_val = ", p_loss_val
+    print *, "q_loss_val = ", q_loss_val
+    if (res /= TORCHFORT_RESULT_SUCCESS) stop
+    print *, "result of train_step_float: ", res
 
-        res = torchfort_rl_off_policy_train_step_float(tf_key, p_loss_val, q_loss_val)
-        print *, "p_loss_val = ", p_loss_val
-        print *, "q_loss_val = ", q_loss_val
-        if (res /= TORCHFORT_RESULT_SUCCESS) stop
-        print *, "result of train_step_float: ", res
-        print *
-
-        res = torchfort_rl_off_policy_wandb_log_float_int32step(tf_key, "actor_loss", tstep, p_loss_val)
-        res = torchfort_rl_off_policy_wandb_log_float_int32step(tf_key, "critic_loss", tstep, q_loss_val)
-
-    end if
+    res = torchfort_rl_off_policy_wandb_log_float_int32step(tf_key, "actor_loss", tstep, p_loss_val)
+    res = torchfort_rl_off_policy_wandb_log_float_int32step(tf_key, "critic_loss", tstep, q_loss_val)
 
   end subroutine spalding_compute
 

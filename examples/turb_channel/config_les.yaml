@@ -6,16 +6,15 @@ general:
 algorithm:
   type: sac
   parameters:
-    batch_size: 1
+    batch_size: 11664 # =n_nodes -> 'a' inf, used for sampling from replay_buffer
     nstep: 1
     nstep_reward_reduction: sum
     num_critics: 1
     gamma: 0.995
     rho: 0.99
-    alpha: 0.1
 
 actor:
-  type: space_noise # parameter_noise
+  type: parameter_noise # space_noise
   parameters:
     a_low: 0.9
     a_high: 1.1
@@ -36,6 +35,8 @@ replay_buffer:
   #parameters:
     #dropout: 0.0
     #layer_sizes: [3, 128, 128, 1]
+    #state_dependent_sigma: True
+    #log_sigma_init: 0.
 
 #critic_model:
   #type: MLP
@@ -56,10 +57,10 @@ critic_model:
 optimizer:
   type: adam
   parameters:
-    learning_rate: 1e-6
+    learning_rate: 0.001
     beta1: 0.9
     beta2: 0.999
-    weight_decay: 0
+    weight_decay: 1e-3
     eps: 1e-6
     amsgrad: 0
 

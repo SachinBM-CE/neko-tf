@@ -138,53 +138,87 @@ contains
     terminal_old => neko_field_registry%get_field("terminal_old")
     terminal_older => neko_field_registry%get_field("terminal_older")
 
+    print *, "***** USERCHECK *****"
+!     do e = 1, 2
+!       do k = 1, 2
+!         do j = 1, 2
+!           do i = 1, 2
+!             print *, u_older%x(i,j,k,e), u_old%x(i,j,k,e), u%x(i,j,k,e)
+!           end do
+!         end do
+!       end do
+!     end do
+    print *, "***** USERCHECK *****"
+
     call copy(u_older%x, u_old%x, size(u_old%x))
     call copy(u_old%x, u%x, size(u%x)) ! coef%dof%size()
 
     n = neko_simcomps%case%fluid%bcs_vel%size()
-
     do i_wm = 1, n
       bc => neko_simcomps%case%fluid%bcs_vel%get(i_wm)
       select type (bc)
-        type is (wall_model_bc_t)
+      type is (wall_model_bc_t)
         wall_bc => bc
         select type(spald => wall_bc%wall_model)
-            type is (spalding_t)
-            if (allocated(spald%state)) then
-                call copy(spald%sor, spald%so, size(spald%so))
-                call copy(spald%so, spald%state_transposed, size(spald%state_transposed))
-                call copy(spald%aor, spald%ao, size(spald%ao))
-                call copy(spald%ao, spald%action_transposed, size(spald%action_transposed))
+        type is (spalding_t)
+          if (allocated(spald%state)) then
+!             print *, "spalding state(1,1): ", spald%state(1,1)
+!             print *, "shape(spald%state): ", shape(spald%state)
 
-                do i = 1, spald%n_nodes
+!             call copy(state_older%x, state_old%x, size(state_older%x))
+!             call copy(state_old%x, spald%state, size(spald%state))
+            call copy(spald%sor, spald%so, size(spald%so))
+            call copy(spald%so, spald%state, size(spald%state))
+            print *, "size(spald%so)", size(spald%so)
+            print *, "size(spald%sor)", size(spald%sor)
+            print *, "No. of Zeros: ", count(spald%sor == 0.0)
 
-                if (abs(t - neko_simcomps%case%time%end_time) .le. 1.0e-3_rp) then
-                    spald%terminal(i,1) = 1.0_rp
-                    if (i >= 1 .and. i <= 5) then
-    !                   print *, spald%terminal(1,i)
+!             call copy(action_older%x, action_old%x, size(action_old%x))
+!             call copy(action_old%x, spald%action, size(spald%action))
+            call copy(spald%aor, spald%ao, size(spald%ao))
+            call copy(spald%ao, spald%action, size(spald%action))
+!             print *, "Total number of wall nodes = ", spald%n_nodes
+!             print *, "Current time = ", t
+!             print *, "End time = ", neko_simcomps%case%time%end_time
+
+            do i = 1, spald%n_nodes
+
+              if (abs(t - neko_simcomps%case%time%end_time) .le. 1.0e-3_rp) then
+                spald%terminal(i,1) = 1.0_rp
+                if (i >= 1 .and. i <= 5) then
+!                   print *, spald%terminal(1,i)
+                end if
+              else
+                spald%terminal(i,1) = 0.0_rp
+                if (i >= 1 .and. i <= 5) then
+!                   print *, spald%terminal(i,1)
+                end if
+              end if
+
+                if (i >= 1 .and. i <= 5) then
+                    if (i == 1) then
+                    write(*, '(A20, F10.4)') '1st do loop: t =', t
+                    write(*, '(A6, 2X, A20, 2X, A20, 2X, A20)') &
+                        'i', 'so(i,1)', 'so(i,2)', 'so(i,3)'
                     end if
-                else
-                    spald%terminal(i,1) = 0.0_rp
-                    if (i >= 1 .and. i <= 5) then
-    !                   print *, spald%terminal(i,1)
-                    end if
+                    write(*, '(I6, 2X, ES20.10, 2X, ES20.10, 2X, ES20.10)') &
+                    i, spald%so(i,1), spald%so(i,2), spald%so(i,3)
                 end if
 
-                    if (i >= 1 .and. i <= 5) then
-                        if (i == 1) then
-                        write(*, '(A20, F10.4)') '1st do loop: t =', t
-                        write(*, '(A6, 2X, A20, 2X, A20, 2X, A20, 2X, A20, 2X, A20, 2X, A20)') &
-                            'i', 'state(i,1)', 'so(i,1)', 'sor(i,1)', 'action(i,1)', 'ao(i,1)', 'aor(i,1)'
-                        end if
-                        write(*, '(I6, 2X, ES20.10, 2X, ES20.10, 2X, ES20.10, 2X, ES20.10, 2X, ES20.10, 2X, ES20.10)') &
-                        i, spald%state_transposed(i,1), spald%so(i,1), spald%sor(i,1), &
-                        spald%action_transposed(i,1), spald%ao(i,1), spald%aor(i,1)
+                if (i >= 1 .and. i <= 5) then
+                    if (i == 1) then
+                    write(*, '(A20, F10.4)') '1st do loop: t =', t
+                    write(*, '(A6, 2X, A20, 2X, A20, 2X, A20)') &
+                        'i', 'sor(i,1)', 'sor(i,2)', 'sor(i,3)'
                     end if
+                    write(*, '(I6, 2X, ES20.10, 2X, ES20.10, 2X, ES20.10)') &
+                    i, spald%sor(i,1), spald%sor(i,2), spald%sor(i,3)
+                end if
 
-                end do
-                call copy(terminal_older%x, terminal_old%x, size(terminal_old%x))
-                call copy(terminal_old%x, spald%terminal, size(spald%terminal))
-            end if
+            end do
+            call copy(terminal_older%x, terminal_old%x, size(terminal_old%x))
+            call copy(terminal_old%x, spald%terminal, size(spald%terminal))
+          end if
         end select
       end select
     end do

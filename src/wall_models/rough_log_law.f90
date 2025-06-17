@@ -263,13 +263,13 @@ contains
     end do
 
     ! Exploitation
-    res = torchfort_rl_off_policy_predict_float_2d_2d(tf_key, reshape(this%state, [3,this%n_nodes]), &
+    res = torchfort_rl_off_policy_predict(tf_key, reshape(this%state, [3,this%n_nodes]), &
     reshape(this%action, [1,this%n_nodes]))
     if (res /= TORCHFORT_RESULT_SUCCESS) stop
     print *, "result of predict_float_2d_2d: ", res
 
     ! Exploration
-    res = torchfort_rl_off_policy_predict_explore_float_2d_2d(tf_key, reshape(this%state, [3,this%n_nodes]), &
+    res = torchfort_rl_off_policy_predict_explore(tf_key, reshape(this%state, [3,this%n_nodes]), &
     reshape(this%action, [1,this%n_nodes]))
     if (res /= TORCHFORT_RESULT_SUCCESS) stop
     print *, "result of predict_explore: ", res
